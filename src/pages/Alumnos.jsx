@@ -2,21 +2,33 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import Modal from '../components/Modal'
 import Avatar from '../components/Avatar'
-import { format } from 'date-fns'
+import { format, addDays, nextDay, startOfWeek, addWeeks } from 'date-fns'
 import { es } from 'date-fns/locale'
 
+const DIAS = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']
 const emptyForm = { nombre:'', apellido:'', telefono:'', plan:'mensual', frecuencia:'', instructor_id:'' }
+const emptyHorario = { dia_semana:'1', hora:'08:00', instructor_id:'', sala:'Sala A', nombre_clase:'' }
 
 export default function Alumnos() {
   const [alumnos, setAlumnos]           = useState([])
   const [instructores, setInstructores] = useState([])
   const [loading, setLoading]           = useState(true)
   const [modal, setModal]               = useState(false)
-  const [historial, setHistorial]       = useState(null)  // alumno seleccionado
+  const [historial, setHistorial]       = useState(null)
   const [histData, setHistData]         = useState([])
+  const [horariosModal, setHorariosModal] = useState(null)  // alumno para horarios
+  const [horarios, setHorarios]         = useState([])
   const [form, setForm]                 = useState(emptyForm)
+  const [horarioForm, setHorarioForm]   = useState(emptyHorario)
   const [saving, setSaving]             = useState(false)
   const [search, setSearch]             = useState('')
+
+  // Replicación
+  const [replicarModal, setReplicarModal] = useState(null)
+  const [replicarSemanas, setReplicarSemanas] = useState(4)
+  const [replicarDesde, setReplicarDesde]   = useState(format(new Date(), 'yyyy-MM-dd'))
+  const [replicando, setReplicando]         = useState(false)
+  const [replicarOk, setReplicarOk]         = useState(false)
 
   useEffect(() => {
     fetchData()
@@ -30,8 +42,7 @@ export default function Alumnos() {
     const [{ data: al }, { data: ins }] = await Promise.all([
       supabase.from('alumnos')
         .select('*, instructores(nombre,apellido), pagos(pagado)')
-        .eq('activo', true)
-        .order('apellido'),
+        .eq('activo', true).order('apellido'),
       supabase.from('instructores').select('id,nombre,apellido').eq('activo',true)
     ])
     setAlumnos(al || [])
@@ -72,11 +83,114 @@ export default function Alumnos() {
     fetchData()
   }
 
+  // --- HORARIOS FIJOS ---
+  async function abrirHorarios(alumno) {
+    setHorariosModal(alumno)
+    const { data } = await supabase.from('horarios_alumno')
+      .select('*, instructores(nombre,apellido)')
+      .eq('alumno_id', alumno.id)
+      .eq('activo', true)
+      .order('dia_semana').order('hora')
+    setHorarios(data || [])
+    setHorarioForm({ ...emptyHorario, instructor_id: alumno.instructor_id || '' })
+  }
+
+  async function agregarHorario() {
+    if (!horarioForm.hora || !horarioForm.nombre_clase) return
+    setSaving(true)
+    await supabase.from('horarios_alumno').insert({
+      alumno_id: horariosModal.id,
+      dia_semana: Number(horarioForm.dia_semana),
+      hora: horarioForm.hora,
+      instructor_id: horarioForm.instructor_id || null,
+      sala: horarioForm.sala,
+      nombre_clase: horarioForm.nombre_clase,
+      activo: true,
+    })
+    const { data } = await supabase.from('horarios_alumno')
+      .select('*, instructores(nombre,apellido)')
+      .eq('alumno_id', horariosModal.id).eq('activo', true)
+      .order('dia_semana').order('hora')
+    setHorarios(data || [])
+    setHorarioForm({ ...emptyHorario, instructor_id: horariosModal.instructor_id || '' })
+    setSaving(false)
+  }
+
+  async function eliminarHorario(id) {
+    await supabase.from('horarios_alumno').update({ activo: false }).eq('id', id)
+    setHorarios(prev => prev.filter(h => h.id !== id))
+  }
+
+  // --- REPLICAR CLASES ---
+  async function replicarClases() {
+    if (!replicarModal || horarios.length === 0) return
+    setReplicando(true)
+    setReplicarOk(false)
+
+    const desde = new Date(replicarDesde + 'T00:00:00')
+    // dia_semana: 0=lun ... 6=dom  → date-fns nextDay: 1=lun ... 7=dom
+    const diasFns = [1,2,3,4,5,6,0].map((_, i) => i + 1) // mapping: índice 0→lunes=1, 6→domingo=7
+
+    for (let semana = 0; semana < replicarSemanas; semana++) {
+      for (const h of horarios) {
+        // dia_semana 0=lun...6=dom, date-fns: lunes=1...domingo=0
+        const dnFns = h.dia_semana === 6 ? 0 : h.dia_semana + 1
+        // Encontrar la fecha correcta para esa semana
+        const base = addWeeks(desde, semana)
+        const inicioSemana = startOfWeek(base, { weekStartsOn: 1 })
+        const fechaDia = addDays(inicioSemana, h.dia_semana)
+        const fechaStr = format(fechaDia, 'yyyy-MM-dd')
+
+        // Verificar si ya existe esa clase ese día a esa hora con ese instructor
+        const { data: existe } = await supabase.from('clases')
+          .select('id')
+          .eq('fecha', fechaStr)
+          .eq('hora', h.hora)
+          .eq('instructor_id', h.instructor_id || '')
+          .maybeSingle()
+
+        if (!existe) {
+          // Crear la clase
+          const { data: nuevaClase } = await supabase.from('clases').insert({
+            nombre: h.nombre_clase,
+            tipo: 'grupal',
+            instructor_id: h.instructor_id || null,
+            fecha: fechaStr,
+            hora: h.hora,
+            sala: h.sala,
+            capacidad: 4,
+          }).select().single()
+
+          // Asignar el alumno
+          if (nuevaClase) {
+            await supabase.from('asistencias').upsert({
+              clase_id: nuevaClase.id,
+              alumno_id: replicarModal.id,
+              asistio: false,
+              recuperacion: false,
+            }, { onConflict: 'clase_id,alumno_id' })
+          }
+        } else {
+          // La clase ya existe, solo asignar el alumno
+          await supabase.from('asistencias').upsert({
+            clase_id: existe.id,
+            alumno_id: replicarModal.id,
+            asistio: false,
+            recuperacion: false,
+          }, { onConflict: 'clase_id,alumno_id' })
+        }
+      }
+    }
+
+    setReplicando(false)
+    setReplicarOk(true)
+  }
+
+  // --- HISTORIAL ---
   async function verHistorial(alumno) {
     setHistorial(alumno)
-    const { data } = await supabase
-      .from('asistencias')
-      .select('*, clases(nombre, fecha, hora, instructores(nombre,apellido))')
+    const { data } = await supabase.from('asistencias')
+      .select('*, clases(nombre,fecha,hora,instructores(nombre,apellido))')
       .eq('alumno_id', alumno.id)
       .order('created_at', { ascending: false })
       .limit(30)
@@ -93,7 +207,9 @@ export default function Alumnos() {
   const filtered = alumnos.filter(a =>
     `${a.nombre} ${a.apellido}`.toLowerCase().includes(search.toLowerCase())
   )
-  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+
+  const set  = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+  const setH = k => e => setHorarioForm(f => ({ ...f, [k]: e.target.value }))
 
   return (
     <>
@@ -130,12 +246,14 @@ export default function Alumnos() {
                     <td><span className={`est ${ep==='ok'?'e-ok':ep==='pendiente'?'e-pe':'e-ve'}`}>
                       {ep==='ok'?'Al día':ep==='pendiente'?'Pendiente':'Sin pago'}
                     </span></td>
-                    <td style={{display:'flex', gap:6}}>
-                      <button className="btn-sec" style={{fontSize:11,padding:'4px 10px'}}
+                    <td style={{display:'flex', gap:5, flexWrap:'wrap'}}>
+                      <button className="btn-sec" style={{fontSize:11,padding:'4px 8px'}}
+                        onClick={() => abrirHorarios(a)}>Horarios</button>
+                      <button className="btn-sec" style={{fontSize:11,padding:'4px 8px'}}
                         onClick={() => verHistorial(a)}>Historial</button>
-                      <button className="btn-sec" style={{fontSize:11,padding:'4px 10px'}}
+                      <button className="btn-sec" style={{fontSize:11,padding:'4px 8px'}}
                         onClick={() => openModal(a)}>Editar</button>
-                      <button className="btn-danger" style={{fontSize:11,padding:'4px 10px'}}
+                      <button className="btn-danger" style={{fontSize:11,padding:'4px 8px'}}
                         onClick={() => handleDelete(a.id)}>✕</button>
                     </td>
                   </tr>
@@ -146,18 +264,16 @@ export default function Alumnos() {
         )}
       </div>
 
-      {/* Modal nuevo/editar */}
+      {/* MODAL: nuevo/editar alumno */}
       {modal && (
-        <Modal
-          title={form.id ? 'Editar alumno' : 'Nuevo alumno'}
+        <Modal title={form.id ? 'Editar alumno' : 'Nuevo alumno'}
           onClose={() => setModal(false)}
           footer={<>
             <button className="btn-sec" onClick={() => setModal(false)}>Cancelar</button>
             <button className="btn-pri" onClick={handleSave} disabled={saving}>
               {saving ? 'Guardando…' : 'Guardar alumno'}
             </button>
-          </>}
-        >
+          </>}>
           <div className="form-row2">
             <div className="form-row" style={{marginBottom:0}}>
               <label className="form-lbl">Nombre</label>
@@ -195,30 +311,125 @@ export default function Alumnos() {
             <label className="form-lbl">Instructor asignado</label>
             <select className="form-inp" value={form.instructor_id} onChange={set('instructor_id')}>
               <option value="">Sin asignar</option>
-              {instructores.map(i => (
-                <option key={i.id} value={i.id}>{i.nombre} {i.apellido}</option>
-              ))}
+              {instructores.map(i => <option key={i.id} value={i.id}>{i.nombre} {i.apellido}</option>)}
             </select>
           </div>
         </Modal>
       )}
 
-      {/* Modal historial */}
+      {/* MODAL: Horarios fijos + replicar */}
+      {horariosModal && (
+        <Modal title={`Horarios — ${horariosModal.nombre} ${horariosModal.apellido}`}
+          onClose={() => { setHorariosModal(null); setReplicarOk(false) }}
+          footer={<button className="btn-pri" onClick={() => { setHorariosModal(null); setReplicarOk(false) }}>Cerrar</button>}>
+
+          {/* Horarios existentes */}
+          {horarios.length === 0
+            ? <div className="empty" style={{marginBottom:16}}>Sin horarios fijos cargados</div>
+            : horarios.map(h => (
+              <div key={h.id} style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 0', borderBottom:'1px solid var(--border)'}}>
+                <div>
+                  <div style={{fontSize:13, fontWeight:500}}>{DIAS[h.dia_semana]} {h.hora?.slice(0,5)}</div>
+                  <div style={{fontSize:11, color:'var(--sl-m)'}}>
+                    {h.nombre_clase} · {h.sala} · {h.instructores ? `${h.instructores.nombre} ${h.instructores.apellido}` : '—'}
+                  </div>
+                </div>
+                <button className="btn-danger" style={{fontSize:11,padding:'3px 8px'}}
+                  onClick={() => eliminarHorario(h.id)}>✕</button>
+              </div>
+            ))
+          }
+
+          {/* Agregar horario */}
+          <div style={{marginTop:16, padding:'14px', background:'var(--sl-l)', borderRadius:10}}>
+            <div style={{fontSize:11, fontWeight:500, color:'var(--sl-m)', textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:10}}>
+              Agregar horario fijo
+            </div>
+            <div className="form-row2">
+              <div className="form-row" style={{marginBottom:0}}>
+                <label className="form-lbl">Día</label>
+                <select className="form-inp" value={horarioForm.dia_semana} onChange={setH('dia_semana')}>
+                  {DIAS.map((d,i) => <option key={i} value={i}>{d}</option>)}
+                </select>
+              </div>
+              <div className="form-row" style={{marginBottom:0}}>
+                <label className="form-lbl">Hora</label>
+                <input className="form-inp" type="time" value={horarioForm.hora} onChange={setH('hora')} />
+              </div>
+            </div>
+            <div className="form-row" style={{marginTop:10}}>
+              <label className="form-lbl">Nombre de la clase</label>
+              <input className="form-inp" value={horarioForm.nombre_clase} onChange={setH('nombre_clase')} placeholder="Ej: Reformer Intermedio" />
+            </div>
+            <div className="form-row2" style={{marginTop:0}}>
+              <div className="form-row" style={{marginBottom:0}}>
+                <label className="form-lbl">Instructor</label>
+                <select className="form-inp" value={horarioForm.instructor_id} onChange={setH('instructor_id')}>
+                  <option value="">Sin asignar</option>
+                  {instructores.map(i => <option key={i.id} value={i.id}>{i.nombre} {i.apellido}</option>)}
+                </select>
+              </div>
+              <div className="form-row" style={{marginBottom:0}}>
+                <label className="form-lbl">Sala</label>
+                <select className="form-inp" value={horarioForm.sala} onChange={setH('sala')}>
+                  <option value="Sala A">Sala A</option>
+                  <option value="Sala B">Sala B</option>
+                </select>
+              </div>
+            </div>
+            <button className="btn-pri" style={{marginTop:10, fontSize:12}} onClick={agregarHorario} disabled={saving}>
+              {saving ? 'Agregando…' : '+ Agregar'}
+            </button>
+          </div>
+
+          {/* Replicar en calendario */}
+          {horarios.length > 0 && (
+            <div style={{marginTop:16, padding:'14px', background:'#FEF3E2', borderRadius:10, border:'1px solid #F0C060'}}>
+              <div style={{fontSize:11, fontWeight:500, color:'#7A5010', textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:10}}>
+                Generar clases en el calendario
+              </div>
+              <div className="form-row2">
+                <div className="form-row" style={{marginBottom:0}}>
+                  <label className="form-lbl">Desde</label>
+                  <input className="form-inp" type="date" value={replicarDesde}
+                    onChange={e => setReplicarDesde(e.target.value)} />
+                </div>
+                <div className="form-row" style={{marginBottom:0}}>
+                  <label className="form-lbl">Semanas a generar</label>
+                  <select className="form-inp" value={replicarSemanas}
+                    onChange={e => setReplicarSemanas(Number(e.target.value))}>
+                    {[1,2,3,4,6,8,12].map(n => <option key={n} value={n}>{n} semanas</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{fontSize:11, color:'#7A5010', marginTop:8, marginBottom:10}}>
+                Se van a crear {horarios.length * replicarSemanas} clases en el calendario y se asignará a {horariosModal.nombre} automáticamente.
+              </div>
+              {replicarOk && (
+                <div style={{fontSize:12, color:'#2D7A5A', background:'#E4F4EE', padding:'8px 12px', borderRadius:7, marginBottom:10}}>
+                  ¡Clases generadas correctamente! Ya aparecen en el calendario.
+                </div>
+              )}
+              <button className="btn-pri" style={{fontSize:12, background:'#D4A020'}}
+                onClick={() => { setReplicarModal(horariosModal); replicarClases() }}
+                disabled={replicando}>
+                {replicando ? 'Generando clases…' : `Generar ${replicarSemanas} semanas`}
+              </button>
+            </div>
+          )}
+        </Modal>
+      )}
+
+      {/* MODAL: historial */}
       {historial && (
-        <Modal
-          title={`Historial — ${historial.nombre} ${historial.apellido}`}
+        <Modal title={`Historial — ${historial.nombre} ${historial.apellido}`}
           onClose={() => setHistorial(null)}
-          footer={<button className="btn-pri" onClick={() => setHistorial(null)}>Cerrar</button>}
-        >
-          <div style={{padding:'0 0 0 0', marginTop:-20}}>
+          footer={<button className="btn-pri" onClick={() => setHistorial(null)}>Cerrar</button>}>
+          <div style={{marginTop:-20}}>
             <table className="tbl">
-              <thead>
-                <tr><th>Fecha</th><th>Clase</th><th>Instructor</th><th>Asistió</th></tr>
-              </thead>
+              <thead><tr><th>Fecha</th><th>Clase</th><th>Instructor</th><th>Asistió</th></tr></thead>
               <tbody>
-                {histData.length === 0 && (
-                  <tr><td colSpan={4} className="empty">Sin registros aún</td></tr>
-                )}
+                {histData.length === 0 && <tr><td colSpan={4} className="empty">Sin registros aún</td></tr>}
                 {histData.map(h => (
                   <tr key={h.id}>
                     <td>{h.clases?.fecha ? format(new Date(h.clases.fecha+'T00:00:00'), 'dd/MM/yy') : '—'}</td>
