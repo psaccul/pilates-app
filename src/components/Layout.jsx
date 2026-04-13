@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import Dashboard     from '../pages/Dashboard'
+import Calendario    from '../pages/Calendario'
 import Turnos        from '../pages/Turnos'
 import Alumnos       from '../pages/Alumnos'
 import Instructores  from '../pages/Instructores'
@@ -10,6 +11,7 @@ import Notificaciones from '../pages/Notificaciones'
 
 const PAGES = [
   { id: 'dashboard',     label: 'Dashboard',        icon: '◈' },
+  { id: 'calendario',    label: 'Calendario',        icon: '◫' },
   { id: 'turnos',        label: 'Turnos',            icon: '◷' },
   { id: 'alumnos',       label: 'Alumnos',           icon: '◉' },
   { id: 'instructores',  label: 'Instructores',      icon: '◎' },
@@ -19,7 +21,7 @@ const PAGES = [
 ]
 
 const PAGE_TITLES = {
-  dashboard: 'Buenos días ✦',
+  dashboard: 'Buenos días ✦', calendario: 'Calendario',
   turnos: 'Turnos', alumnos: 'Alumnos', instructores: 'Instructores',
   pagos: 'Pagos', reportes: 'Reportes', notif: 'Notificaciones'
 }
@@ -71,6 +73,7 @@ export default function Layout() {
         </div>
         <div className="content">
           {page === 'dashboard'    && <Dashboard    setPage={setPage} />}
+          {page === 'calendario'   && <Calendario />}
           {page === 'turnos'       && <Turnos />}
           {page === 'alumnos'      && <Alumnos />}
           {page === 'instructores' && <Instructores />}
