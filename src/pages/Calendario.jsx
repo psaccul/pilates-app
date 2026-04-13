@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import Modal from '../components/Modal'
 import Avatar from '../components/Avatar'
 import {
   format, startOfMonth, endOfMonth, eachDayOfInterval,
-  startOfWeek, endOfWeek, isSameMonth, isToday, parseISO, addMonths, subMonths
+  startOfWeek, endOfWeek, isSameMonth, isToday, addMonths, subMonths
 } from 'date-fns'
 import { es } from 'date-fns/locale'
 
@@ -16,6 +16,14 @@ const COLORES_INSTRUCTOR = [
   { bg:'#FEF3E2', text:'#7A5010', border:'#D4A020' },
 ]
 
+// estado_asistencia: 'pendiente' | 'presente' | 'ausente_con_aviso' | 'ausente_sin_aviso'
+const ESTADOS = {
+  pendiente:          { label:'Sin marcar',       bg:'var(--sl-l)',  text:'var(--sl-m)',  border:'var(--border)' },
+  presente:           { label:'Presente',          bg:'#E4F4EE',     text:'#2D7A5A',     border:'#6DC49A' },
+  ausente_con_aviso:  { label:'Ausente c/aviso',  bg:'#FEF3E2',     text:'#7A5010',     border:'#F0C060' },
+  ausente_sin_aviso:  { label:'Ausente s/aviso',  bg:'#FDECEA',     text:'#B03030',     border:'#F09595' },
+}
+
 export default function Calendario() {
   const [mesActual, setMesActual]       = useState(new Date())
   const [clases, setClases]             = useState([])
@@ -23,24 +31,23 @@ export default function Calendario() {
   const [alumnos, setAlumnos]           = useState([])
   const [loading, setLoading]           = useState(true)
 
-  // modales
-  const [modalClase, setModalClase]     = useState(null)   // clase seleccionada
-  const [modalNueva, setModalNueva]     = useState(null)   // fecha para nueva clase
-  const [modalMover, setModalMover]     = useState(null)   // { clase, alumnoId }
-  const [modalAgregar, setModalAgregar] = useState(null)   // { clase, esRec }
+  const [modalClase, setModalClase]     = useState(null)
+  const [modalNueva, setModalNueva]     = useState(null)
+  const [modalMover, setModalMover]     = useState(null)
+  const [modalAgregar, setModalAgregar] = useState(null)
+  const [editando, setEditando]         = useState(false)
+  const [saving, setSaving]             = useState(false)
 
   const emptyForm = { nombre:'', tipo:'grupal', instructor_id:'', fecha:'', hora:'08:00', sala:'Sala A', capacidad:4 }
-  const [form, setForm]   = useState(emptyForm)
-  const [saving, setSaving] = useState(false)
-  const [editando, setEditando] = useState(false)
+  const [form, setForm] = useState(emptyForm)
 
   useEffect(() => { fetchBase() }, [])
   useEffect(() => { fetchClases() }, [mesActual])
 
   async function fetchBase() {
     const [{ data: ins }, { data: al }] = await Promise.all([
-      supabase.from('instructores').select('id,nombre,apellido').eq('activo', true).order('nombre'),
-      supabase.from('alumnos').select('id,nombre,apellido').eq('activo', true).order('apellido'),
+      supabase.from('instructores').select('id,nombre,apellido').eq('activo',true).order('nombre'),
+      supabase.from('alumnos').select('id,nombre,apellido').eq('activo',true).order('apellido'),
     ])
     setInstructores(ins || [])
     setAlumnos(al || [])
@@ -48,46 +55,62 @@ export default function Calendario() {
 
   async function fetchClases() {
     setLoading(true)
-    const inicio = format(startOfWeek(startOfMonth(mesActual), { weekStartsOn: 1 }), 'yyyy-MM-dd')
-    const fin    = format(endOfWeek(endOfMonth(mesActual),     { weekStartsOn: 1 }), 'yyyy-MM-dd')
-
+    const inicio = format(startOfWeek(startOfMonth(mesActual),{weekStartsOn:1}),'yyyy-MM-dd')
+    const fin    = format(endOfWeek(endOfMonth(mesActual),    {weekStartsOn:1}),'yyyy-MM-dd')
     const { data } = await supabase
       .from('clases')
-      .select('*, instructores(id,nombre,apellido), asistencias(id,alumno_id,asistio,recuperacion,alumnos(id,nombre,apellido))')
-      .gte('fecha', inicio)
-      .lte('fecha', fin)
-      .order('hora')
-
+      .select('*, instructores(id,nombre,apellido), asistencias(id,alumno_id,asistio,recuperacion,estado_asistencia,alumnos(id,nombre,apellido))')
+      .gte('fecha', inicio).lte('fecha', fin).order('hora')
     setClases(data || [])
     setLoading(false)
   }
 
-  // Color por instructor (índice estable)
+  async function refrescarClase(claseId) {
+    const { data } = await supabase
+      .from('clases')
+      .select('*, instructores(id,nombre,apellido), asistencias(id,alumno_id,asistio,recuperacion,estado_asistencia,alumnos(id,nombre,apellido))')
+      .eq('id', claseId).single()
+    if (data) {
+      setClases(prev => prev.map(c => c.id === claseId ? data : c))
+      setModalClase(data)
+    }
+  }
+
   function colorInstructor(instructorId) {
     const idx = instructores.findIndex(i => i.id === instructorId)
     return COLORES_INSTRUCTOR[idx % COLORES_INSTRUCTOR.length] || COLORES_INSTRUCTOR[0]
   }
 
-  // Días del calendario (incluyendo padding de semana)
   const diasCalendario = eachDayOfInterval({
-    start: startOfWeek(startOfMonth(mesActual), { weekStartsOn: 1 }),
-    end:   endOfWeek(endOfMonth(mesActual),     { weekStartsOn: 1 }),
+    start: startOfWeek(startOfMonth(mesActual),{weekStartsOn:1}),
+    end:   endOfWeek(endOfMonth(mesActual),    {weekStartsOn:1}),
   })
 
   function clasesDia(dia) {
-    const key = format(dia, 'yyyy-MM-dd')
+    const key = format(dia,'yyyy-MM-dd')
     return clases.filter(c => c.fecha === key).sort((a,b) => a.hora.localeCompare(b.hora))
   }
 
-  function alumnosNormales(clase) {
-    return (clase.asistencias || []).filter(a => !a.recuperacion)
+  function resumenAsistencia(clase) {
+    const asis = clase.asistencias || []
+    return {
+      total:          asis.length,
+      presentes:      asis.filter(a => a.estado_asistencia === 'presente').length,
+      conAviso:       asis.filter(a => a.estado_asistencia === 'ausente_con_aviso').length,
+      sinAviso:       asis.filter(a => a.estado_asistencia === 'ausente_sin_aviso').length,
+      pendientes:     asis.filter(a => !a.estado_asistencia || a.estado_asistencia === 'pendiente').length,
+    }
   }
 
-  function alumnosRecuperacion(clase) {
-    return (clase.asistencias || []).filter(a => a.recuperacion)
+  // Cambiar estado de asistencia de un alumno en una clase
+  async function cambiarEstado(asistenciaId, nuevoEstado) {
+    const asistio = nuevoEstado === 'presente'
+    await supabase.from('asistencias').update({
+      estado_asistencia: nuevoEstado,
+      asistio,
+    }).eq('id', asistenciaId)
+    await refrescarClase(modalClase.id)
   }
-
-  // --- Acciones ---
 
   async function guardarNuevaClase() {
     if (!form.nombre || !form.fecha || !form.hora) return
@@ -114,14 +137,8 @@ export default function Calendario() {
     }).eq('id', modalClase.id)
     setSaving(false)
     setEditando(false)
+    refrescarClase(modalClase.id)
     fetchClases()
-    // refrescar modal
-    const { data } = await supabase
-      .from('clases')
-      .select('*, instructores(id,nombre,apellido), asistencias(id,alumno_id,asistio,recuperacion,alumnos(id,nombre,apellido))')
-      .eq('id', modalClase.id)
-      .single()
-    setModalClase(data)
   }
 
   async function eliminarClase() {
@@ -137,114 +154,110 @@ export default function Calendario() {
       alumno_id: alumnoId,
       asistio: false,
       recuperacion: esRec,
+      estado_asistencia: 'pendiente',
     }, { onConflict: 'clase_id,alumno_id' })
     setModalAgregar(null)
-    fetchClases()
-    // refrescar modal clase
-    const { data } = await supabase
-      .from('clases')
-      .select('*, instructores(id,nombre,apellido), asistencias(id,alumno_id,asistio,recuperacion,alumnos(id,nombre,apellido))')
-      .eq('id', modalAgregar.clase.id)
-      .single()
-    setModalClase(data)
+    refrescarClase(modalAgregar.clase.id)
   }
 
   async function quitarAlumno(asistenciaId) {
     await supabase.from('asistencias').delete().eq('id', asistenciaId)
-    fetchClases()
-    const { data } = await supabase
-      .from('clases')
-      .select('*, instructores(id,nombre,apellido), asistencias(id,alumno_id,asistio,recuperacion,alumnos(id,nombre,apellido))')
-      .eq('id', modalClase.id)
-      .single()
-    setModalClase(data)
+    refrescarClase(modalClase.id)
   }
 
   async function moverAlumno(claseDestId) {
-    const { clase, asistenciaId, alumnoId } = modalMover
-    // quitar de origen
+    const { asistenciaId, alumnoId } = modalMover
     await supabase.from('asistencias').delete().eq('id', asistenciaId)
-    // agregar a destino
     await supabase.from('asistencias').upsert({
-      clase_id: claseDestId,
-      alumno_id: alumnoId,
-      asistio: false,
-      recuperacion: false,
+      clase_id: claseDestId, alumno_id: alumnoId,
+      asistio: false, recuperacion: false, estado_asistencia: 'pendiente',
     }, { onConflict: 'clase_id,alumno_id' })
     setModalMover(null)
+    refrescarClase(modalClase.id)
     fetchClases()
-    const { data } = await supabase
-      .from('clases')
-      .select('*, instructores(id,nombre,apellido), asistencias(id,alumno_id,asistio,recuperacion,alumnos(id,nombre,apellido))')
-      .eq('id', clase.id)
-      .single()
-    setModalClase(data)
   }
 
-  const setF = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+  const setF = k => e => setForm(f => ({...f, [k]: e.target.value}))
 
-  // -------------------------------------------------------
-  // RENDER
-  // -------------------------------------------------------
+  // Chip de clase en el calendario
+  function ChipClase({ c }) {
+    const col     = colorInstructor(c.instructor_id)
+    const res     = resumenAsistencia(c)
+    const tieneRec = (c.asistencias||[]).some(a => a.recuperacion)
+    const hayAusentes = res.sinAviso > 0
+
+    return (
+      <button onClick={() => { setModalClase(c); setEditando(false) }} style={{
+        display:'block', width:'100%', textAlign:'left',
+        background: col.bg, color: col.text,
+        border: `1px solid ${hayAusentes ? '#F09595' : tieneRec ? '#D4A020' : col.border}`,
+        borderRadius:5, padding:'3px 6px', marginBottom:3, cursor:'pointer',
+      }}>
+        <span style={{fontSize:9, fontWeight:500, opacity:0.75, display:'block'}}>
+          {c.hora.slice(0,5)} · {c.instructores?.nombre?.split(' ')[0] || '—'}
+        </span>
+        <span style={{fontSize:10, fontWeight:500, display:'block', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>
+          {c.nombre}
+          {tieneRec && <span style={{fontSize:8, padding:'1px 3px', background:'rgba(0,0,0,0.12)', borderRadius:3, marginLeft:3}}>REC</span>}
+        </span>
+        {/* Mini barra de asistencia */}
+        {res.total > 0 && (
+          <div style={{display:'flex', gap:2, marginTop:3, alignItems:'center'}}>
+            {res.presentes > 0    && <div style={{height:3, borderRadius:2, background:'#48A999', flex:res.presentes}} />}
+            {res.conAviso > 0     && <div style={{height:3, borderRadius:2, background:'#D4A020', flex:res.conAviso}} />}
+            {res.sinAviso > 0     && <div style={{height:3, borderRadius:2, background:'#E24B4A', flex:res.sinAviso}} />}
+            {res.pendientes > 0   && <div style={{height:3, borderRadius:2, background:'var(--border)', flex:res.pendientes}} />}
+            <span style={{fontSize:8, color:col.text, opacity:0.6}}>{res.presentes}/{res.total}</span>
+          </div>
+        )}
+      </button>
+    )
+  }
 
   return (
     <div>
-      {/* Header del calendario */}
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <button className="btn-sec" onClick={() => setMesActual(m => subMonths(m, 1))}>←</button>
-          <span style={{ fontSize:16, fontWeight:500, minWidth:160, textAlign:'center' }}>
-            {format(mesActual, 'MMMM yyyy', { locale: es }).replace(/^\w/, c => c.toUpperCase())}
+      {/* Header */}
+      <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, flexWrap:'wrap', gap:10}}>
+        <div style={{display:'flex', alignItems:'center', gap:10}}>
+          <button className="btn-sec" onClick={() => setMesActual(m => subMonths(m,1))}>←</button>
+          <span style={{fontSize:16, fontWeight:500, minWidth:160, textAlign:'center'}}>
+            {format(mesActual,'MMMM yyyy',{locale:es}).replace(/^\w/,c=>c.toUpperCase())}
           </span>
-          <button className="btn-sec" onClick={() => setMesActual(m => addMonths(m, 1))}>→</button>
+          <button className="btn-sec" onClick={() => setMesActual(m => addMonths(m,1))}>→</button>
           <button className="btn-sec" onClick={() => setMesActual(new Date())}>Hoy</button>
         </div>
-
-        {/* Leyenda instructores */}
-        <div style={{ display:'flex', gap:12, flexWrap:'wrap', alignItems:'center' }}>
-          {instructores.map((inst, idx) => {
+        {/* Leyenda */}
+        <div style={{display:'flex', gap:12, flexWrap:'wrap', alignItems:'center'}}>
+          {instructores.map((inst,idx) => {
             const col = COLORES_INSTRUCTOR[idx % COLORES_INSTRUCTOR.length]
             return (
-              <div key={inst.id} style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'var(--sl-m)' }}>
-                <div style={{ width:9, height:9, borderRadius:'50%', background:col.border, flexShrink:0 }} />
+              <div key={inst.id} style={{display:'flex', alignItems:'center', gap:5, fontSize:11, color:'var(--sl-m)'}}>
+                <div style={{width:9, height:9, borderRadius:'50%', background:col.border}} />
                 {inst.nombre} {inst.apellido}
               </div>
             )
           })}
-          <div style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:'var(--sl-m)' }}>
-            <div style={{ width:9, height:9, borderRadius:'50%', background:'#D4A020', flexShrink:0 }} />
-            Con recuperación
+          <div style={{display:'flex', alignItems:'center', gap:5, fontSize:11, color:'var(--sl-m)'}}>
+            <div style={{width:24, height:3, borderRadius:2, background:'linear-gradient(to right, #48A999 33%, #D4A020 33% 66%, #E24B4A 66%)'}} />
+            Pres · C/av · S/av
           </div>
         </div>
       </div>
 
-      {/* Grid días */}
+      {/* Grid */}
       <div style={{
         display:'grid', gridTemplateColumns:'repeat(7,minmax(0,1fr))',
-        gap:1, background:'var(--border)',
-        border:'1px solid var(--border)', borderRadius:12, overflow:'hidden'
+        gap:1, background:'var(--border)', border:'1px solid var(--border)', borderRadius:12, overflow:'hidden'
       }}>
-        {/* Cabecera días */}
         {['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].map(d => (
-          <div key={d} style={{
-            background:'var(--sl-l)', padding:'7px 10px',
-            fontSize:10, fontWeight:500, color:'var(--sl-m)',
-            textTransform:'uppercase', letterSpacing:'0.06em', textAlign:'center'
-          }}>{d}</div>
+          <div key={d} style={{background:'var(--sl-l)', padding:'7px 10px', fontSize:10, fontWeight:500, color:'var(--sl-m)', textTransform:'uppercase', letterSpacing:'0.06em', textAlign:'center'}}>{d}</div>
         ))}
-
-        {/* Celdas */}
         {diasCalendario.map(dia => {
-          const esMes   = isSameMonth(dia, mesActual)
-          const esHoy   = isToday(dia)
+          const esMes  = isSameMonth(dia, mesActual)
+          const esHoy  = isToday(dia)
           const clasesD = clasesDia(dia)
-
           return (
-            <div key={dia.toISOString()} style={{
-              background: esMes ? 'var(--white)' : 'var(--sl-l)',
-              padding:8, minHeight:110, opacity: esMes ? 1 : 0.5
-            }}>
-              {/* Número del día */}
+            <div key={dia.toISOString()} style={{background: esMes ? 'var(--white)' : 'var(--sl-l)', padding:8, minHeight:110, opacity: esMes ? 1 : 0.5}}>
               <div style={{
                 width:22, height:22, borderRadius:'50%',
                 background: esHoy ? 'var(--mg)' : 'transparent',
@@ -252,166 +265,124 @@ export default function Calendario() {
                 display:'flex', alignItems:'center', justifyContent:'center',
                 fontSize:11, fontWeight:500, marginBottom:5
               }}>{dia.getDate()}</div>
-
-              {/* Chips de clases */}
-              {clasesD.map(c => {
-                const col     = colorInstructor(c.instructor_id)
-                const normales = alumnosNormales(c).length
-                const recs     = alumnosRecuperacion(c).length
-                const total    = normales + recs
-                return (
-                  <button key={c.id}
-                    onClick={() => { setModalClase(c); setEditando(false) }}
-                    style={{
-                      display:'block', width:'100%', textAlign:'left',
-                      background: col.bg, color: col.text,
-                      border:`1px solid ${recs > 0 ? '#D4A020' : col.border}`,
-                      borderRadius:5, padding:'3px 6px', marginBottom:3,
-                      cursor:'pointer', transition:'opacity 0.12s'
-                    }}
-                  >
-                    <span style={{ fontSize:9, fontWeight:500, opacity:0.75, display:'block' }}>
-                      {c.hora.slice(0,5)} · {c.instructores ? c.instructores.nombre.split(' ')[0] : '—'}
-                    </span>
-                    <span style={{ fontSize:10, fontWeight:500, display:'block', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
-                      {c.nombre}
-                      {recs > 0 && <span style={{ fontSize:8, padding:'1px 4px', background:'rgba(0,0,0,0.12)', borderRadius:3, marginLeft:4 }}>REC</span>}
-                    </span>
-                    <span style={{ fontSize:9, opacity:0.7, display:'block' }}>
-                      {total} alumno{total !== 1 ? 's' : ''}
-                    </span>
-                  </button>
-                )
-              })}
-
-              {/* Botón agregar clase */}
+              {clasesD.map(c => <ChipClase key={c.id} c={c} />)}
               {esMes && (
-                <button onClick={() => {
-                  setForm({ ...emptyForm, fecha: format(dia,'yyyy-MM-dd') })
-                  setModalNueva(format(dia,'yyyy-MM-dd'))
-                }} style={{
-                  width:'100%', marginTop:2, background:'none',
-                  border:'0.5px dashed var(--border)', borderRadius:4,
-                  color:'var(--sl-m)', fontSize:11, padding:'2px 0', cursor:'pointer'
-                }}>+</button>
+                <button onClick={() => { setForm({...emptyForm, fecha:format(dia,'yyyy-MM-dd')}); setModalNueva(format(dia,'yyyy-MM-dd')) }}
+                  style={{width:'100%', marginTop:2, background:'none', border:'0.5px dashed var(--border)', borderRadius:4, color:'var(--sl-m)', fontSize:11, padding:'2px 0', cursor:'pointer'}}>
+                  +
+                </button>
               )}
             </div>
           )
         })}
       </div>
 
-      {/* ============================
-          MODAL: Ver clase
-      ============================= */}
+      {/* ====== MODAL: Ver clase + asistencia ====== */}
       {modalClase && !editando && !modalAgregar && !modalMover && (
-        <Modal
-          title={modalClase.nombre}
+        <Modal title={modalClase.nombre}
           onClose={() => setModalClase(null)}
           footer={<>
             <button className="btn-danger" onClick={eliminarClase}>Eliminar</button>
             <button className="btn-sec" onClick={() => setModalClase(null)}>Cerrar</button>
-          </>}
-        >
-          {/* Info básica */}
-          <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:16 }}>
+          </>}>
+
+          {/* Info */}
+          <div style={{display:'flex', gap:8, flexWrap:'wrap', marginBottom:14}}>
             {modalClase.instructores && (() => {
               const col = colorInstructor(modalClase.instructor_id)
-              return (
-                <span style={{ fontSize:11, padding:'3px 9px', borderRadius:99, background:col.bg, color:col.text }}>
-                  {modalClase.instructores.nombre} {modalClase.instructores.apellido}
-                </span>
-              )
+              return <span style={{fontSize:11, padding:'3px 9px', borderRadius:99, background:col.bg, color:col.text}}>{modalClase.instructores.nombre} {modalClase.instructores.apellido}</span>
             })()}
-            <span style={{ fontSize:11, padding:'3px 9px', borderRadius:99, background:'var(--sl-l)', color:'var(--sl-m)' }}>
-              {modalClase.tipo === 'grupal' ? 'Grupal' : 'Individual'}
-            </span>
-            <span style={{ fontSize:11, padding:'3px 9px', borderRadius:99, background:'var(--sl-l)', color:'var(--sl-m)' }}>
-              {modalClase.sala}
-            </span>
-            <span style={{ fontSize:11, padding:'3px 9px', borderRadius:99, background:'var(--sl-l)', color:'var(--sl-m)' }}>
-              {modalClase.hora?.slice(0,5)} · {modalClase.fecha}
-            </span>
+            <span style={{fontSize:11, padding:'3px 9px', borderRadius:99, background:'var(--sl-l)', color:'var(--sl-m)'}}>{modalClase.tipo==='grupal'?'Grupal':'Individual'}</span>
+            <span style={{fontSize:11, padding:'3px 9px', borderRadius:99, background:'var(--sl-l)', color:'var(--sl-m)'}}>{modalClase.sala}</span>
+            <span style={{fontSize:11, padding:'3px 9px', borderRadius:99, background:'var(--sl-l)', color:'var(--sl-m)'}}>{modalClase.hora?.slice(0,5)} · {modalClase.fecha}</span>
           </div>
 
-          {/* Alumnos normales */}
-          <div style={{ fontSize:11, fontWeight:500, color:'var(--sl-m)', textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:8 }}>
-            Alumnos ({alumnosNormales(modalClase).length + alumnosRecuperacion(modalClase).length})
+          {/* Resumen asistencia */}
+          {(() => {
+            const res = resumenAsistencia(modalClase)
+            if (res.total === 0) return null
+            return (
+              <div style={{display:'flex', gap:8, marginBottom:14, flexWrap:'wrap'}}>
+                <div style={{fontSize:11, padding:'4px 10px', borderRadius:8, background:'#E4F4EE', color:'#2D7A5A'}}>✓ {res.presentes} presentes</div>
+                {res.conAviso > 0 && <div style={{fontSize:11, padding:'4px 10px', borderRadius:8, background:'#FEF3E2', color:'#7A5010'}}>⚠ {res.conAviso} c/aviso</div>}
+                {res.sinAviso > 0 && <div style={{fontSize:11, padding:'4px 10px', borderRadius:8, background:'#FDECEA', color:'#B03030'}}>✗ {res.sinAviso} s/aviso</div>}
+                {res.pendientes > 0 && <div style={{fontSize:11, padding:'4px 10px', borderRadius:8, background:'var(--sl-l)', color:'var(--sl-m)'}}>○ {res.pendientes} sin marcar</div>}
+              </div>
+            )
+          })()}
+
+          {/* Lista alumnos con selector de estado */}
+          <div style={{fontSize:11, fontWeight:500, color:'var(--sl-m)', textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:8}}>
+            Alumnos ({(modalClase.asistencias||[]).length})
           </div>
 
-          {alumnosNormales(modalClase).map(a => (
-            <div key={a.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'7px 0', borderBottom:'1px solid var(--border)' }}>
-              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                <Avatar nombre={a.alumnos?.nombre||'?'} apellido={a.alumnos?.apellido||''} size={24} fontSize={8} />
-                <span style={{ fontSize:13 }}>{a.alumnos?.nombre} {a.alumnos?.apellido}</span>
-              </div>
-              <div style={{ display:'flex', gap:6 }}>
-                <button className="btn-sec" style={{ fontSize:10, padding:'3px 8px' }}
-                  onClick={() => setModalMover({ clase: modalClase, asistenciaId: a.id, alumnoId: a.alumno_id })}>
-                  Mover →
-                </button>
-                <button className="btn-danger" style={{ fontSize:10, padding:'3px 8px' }}
-                  onClick={() => quitarAlumno(a.id)}>✕</button>
-              </div>
-            </div>
-          ))}
+          {(modalClase.asistencias||[]).length === 0 && <div className="empty">Sin alumnos asignados</div>}
 
-          {/* Alumnos en recuperación */}
-          {alumnosRecuperacion(modalClase).map(a => (
-            <div key={a.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'7px 0', borderBottom:'1px solid var(--border)' }}>
-              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                <Avatar nombre={a.alumnos?.nombre||'?'} apellido={a.alumnos?.apellido||''} size={24} fontSize={8} />
-                <span style={{ fontSize:13 }}>{a.alumnos?.nombre} {a.alumnos?.apellido}</span>
-                <span style={{ fontSize:9, padding:'2px 6px', background:'#FEF3E2', color:'#7A5010', borderRadius:3 }}>RECUPERACIÓN</span>
+          {(modalClase.asistencias||[]).map(a => {
+            const estado = a.estado_asistencia || 'pendiente'
+            const est = ESTADOS[estado] || ESTADOS.pendiente
+            return (
+              <div key={a.id} style={{display:'flex', alignItems:'center', gap:10, padding:'8px 0', borderBottom:'1px solid var(--border)'}}>
+                <Avatar nombre={a.alumnos?.nombre||'?'} apellido={a.alumnos?.apellido||''} size={26} fontSize={9} />
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13, fontWeight:500}}>
+                    {a.alumnos?.nombre} {a.alumnos?.apellido}
+                    {a.recuperacion && <span style={{fontSize:9, padding:'1px 5px', background:'#FEF3E2', color:'#7A5010', borderRadius:3, marginLeft:6}}>REC</span>}
+                  </div>
+                </div>
+                {/* Selector de estado */}
+                <div style={{display:'flex', gap:4, alignItems:'center'}}>
+                  {Object.entries(ESTADOS).map(([key, val]) => (
+                    <button key={key}
+                      onClick={() => cambiarEstado(a.id, key)}
+                      title={val.label}
+                      style={{
+                        padding:'3px 8px', borderRadius:6, fontSize:10, fontWeight:500, cursor:'pointer',
+                        background: estado===key ? val.bg : 'var(--sl-l)',
+                        color: estado===key ? val.text : 'var(--sl-m)',
+                        border: `1px solid ${estado===key ? val.border : 'transparent'}`,
+                        transition:'all 0.12s',
+                      }}>
+                      {key==='pendiente'?'—':key==='presente'?'✓':key==='ausente_con_aviso'?'⚠':'✗'}
+                    </button>
+                  ))}
+                  <button className="btn-sec" style={{fontSize:10, padding:'3px 8px'}}
+                    onClick={() => setModalMover({clase:modalClase, asistenciaId:a.id, alumnoId:a.alumno_id})}>
+                    Mover
+                  </button>
+                  <button className="btn-danger" style={{fontSize:10, padding:'3px 6px'}}
+                    onClick={() => quitarAlumno(a.id)}>✕</button>
+                </div>
               </div>
-              <button className="btn-danger" style={{ fontSize:10, padding:'3px 8px' }}
-                onClick={() => quitarAlumno(a.id)}>✕</button>
-            </div>
-          ))}
+            )
+          })}
 
-          {alumnosNormales(modalClase).length === 0 && alumnosRecuperacion(modalClase).length === 0 && (
-            <div className="empty">Sin alumnos asignados</div>
+          {/* Alerta ausentes sin aviso */}
+          {resumenAsistencia(modalClase).sinAviso > 0 && (
+            <div style={{marginTop:12, padding:'10px 14px', background:'#FDECEA', borderRadius:8, fontSize:12, color:'#B03030'}}>
+              ⚠ Hay {resumenAsistencia(modalClase).sinAviso} alumno{resumenAsistencia(modalClase).sinAviso>1?'s':''} ausente{resumenAsistencia(modalClase).sinAviso>1?'s':''} sin aviso. Podés enviarles un WhatsApp desde Notificaciones.
+            </div>
           )}
 
-          {/* Acciones */}
-          <div style={{ display:'flex', gap:8, marginTop:14, flexWrap:'wrap' }}>
-            <button className="btn-sec" style={{ fontSize:11 }}
-              onClick={() => setModalAgregar({ clase: modalClase, esRec: false })}>
-              + Agregar alumno
-            </button>
-            <button style={{ fontSize:11, padding:'6px 12px', borderRadius:8, background:'#FEF3E2', color:'#7A5010', border:'1px solid #F0C060', cursor:'pointer' }}
-              onClick={() => setModalAgregar({ clase: modalClase, esRec: true })}>
-              + Recuperación
-            </button>
-            <button className="btn-sec" style={{ fontSize:11 }}
-              onClick={() => {
-                setForm({
-                  nombre: modalClase.nombre, tipo: modalClase.tipo,
-                  instructor_id: modalClase.instructor_id || '',
-                  fecha: modalClase.fecha, hora: modalClase.hora,
-                  sala: modalClase.sala, capacidad: modalClase.capacidad
-                })
-                setEditando(true)
-              }}>
-              Editar clase
-            </button>
+          <div style={{display:'flex', gap:8, marginTop:14, flexWrap:'wrap'}}>
+            <button className="btn-sec" style={{fontSize:11}} onClick={() => setModalAgregar({clase:modalClase, esRec:false})}>+ Alumno</button>
+            <button style={{fontSize:11, padding:'6px 12px', borderRadius:8, background:'#FEF3E2', color:'#7A5010', border:'1px solid #F0C060', cursor:'pointer'}}
+              onClick={() => setModalAgregar({clase:modalClase, esRec:true})}>+ Recuperación</button>
+            <button className="btn-sec" style={{fontSize:11}} onClick={() => {
+              setForm({ nombre:modalClase.nombre, tipo:modalClase.tipo, instructor_id:modalClase.instructor_id||'', fecha:modalClase.fecha, hora:modalClase.hora, sala:modalClase.sala, capacidad:modalClase.capacidad })
+              setEditando(true)
+            }}>Editar clase</button>
           </div>
         </Modal>
       )}
 
-      {/* ============================
-          MODAL: Editar clase
-      ============================= */}
+      {/* ====== MODAL: Editar ====== */}
       {modalClase && editando && (
-        <Modal
-          title="Editar clase"
-          onClose={() => setEditando(false)}
+        <Modal title="Editar clase" onClose={() => setEditando(false)}
           footer={<>
             <button className="btn-sec" onClick={() => setEditando(false)}>Cancelar</button>
-            <button className="btn-pri" onClick={guardarEdicion} disabled={saving}>
-              {saving ? 'Guardando…' : 'Guardar'}
-            </button>
-          </>}
-        >
+            <button className="btn-pri" onClick={guardarEdicion} disabled={saving}>{saving?'Guardando…':'Guardar'}</button>
+          </>}>
           <div className="form-row">
             <label className="form-lbl">Nombre</label>
             <input className="form-inp" value={form.nombre} onChange={setF('nombre')} />
@@ -448,20 +419,14 @@ export default function Calendario() {
         </Modal>
       )}
 
-      {/* ============================
-          MODAL: Nueva clase
-      ============================= */}
+      {/* ====== MODAL: Nueva clase ====== */}
       {modalNueva && (
-        <Modal
-          title={`Nueva clase — ${format(parseISO(modalNueva), "d 'de' MMMM", { locale: es })}`}
+        <Modal title={`Nueva clase — ${format(new Date(modalNueva+'T00:00:00'),"d 'de' MMMM",{locale:es})}`}
           onClose={() => setModalNueva(null)}
           footer={<>
             <button className="btn-sec" onClick={() => setModalNueva(null)}>Cancelar</button>
-            <button className="btn-pri" onClick={guardarNuevaClase} disabled={saving}>
-              {saving ? 'Guardando…' : 'Guardar clase'}
-            </button>
-          </>}
-        >
+            <button className="btn-pri" onClick={guardarNuevaClase} disabled={saving}>{saving?'Guardando…':'Guardar'}</button>
+          </>}>
           <div className="form-row">
             <label className="form-lbl">Nombre</label>
             <input className="form-inp" value={form.nombre} onChange={setF('nombre')} placeholder="Ej: Reformer Intermedio" />
@@ -502,67 +467,48 @@ export default function Calendario() {
         </Modal>
       )}
 
-      {/* ============================
-          MODAL: Agregar alumno / recuperación
-      ============================= */}
+      {/* ====== MODAL: Agregar alumno ====== */}
       {modalAgregar && (
-        <Modal
-          title={modalAgregar.esRec ? 'Agregar recuperación' : 'Agregar alumno'}
+        <Modal title={modalAgregar.esRec ? 'Agregar recuperación' : 'Agregar alumno'}
           onClose={() => setModalAgregar(null)}
-          footer={<button className="btn-sec" onClick={() => setModalAgregar(null)}>Cancelar</button>}
-        >
+          footer={<button className="btn-sec" onClick={() => setModalAgregar(null)}>Cancelar</button>}>
           {modalAgregar.esRec && (
-            <div style={{ fontSize:12, padding:'8px 12px', background:'#FEF3E2', color:'#7A5010', borderRadius:8, marginBottom:14 }}>
-              Esta clase se marcará como <strong>recuperación</strong> para el alumno seleccionado.
+            <div style={{fontSize:12, padding:'8px 12px', background:'#FEF3E2', color:'#7A5010', borderRadius:8, marginBottom:14}}>
+              Esta clase se marcará como <strong>recuperación</strong> — el lugar queda reservado aunque falte a otra.
             </div>
           )}
           {(() => {
-            const yaAsignados = (modalAgregar.clase.asistencias || []).map(a => a.alumno_id)
+            const yaAsignados = (modalAgregar.clase.asistencias||[]).map(a => a.alumno_id)
             const disponibles = alumnos.filter(a => !yaAsignados.includes(a.id))
             if (disponibles.length === 0) return <div className="empty">No hay alumnos disponibles</div>
             return disponibles.map(a => (
-              <div key={a.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 0', borderBottom:'1px solid var(--border)' }}>
-                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <div key={a.id} style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 0', borderBottom:'1px solid var(--border)'}}>
+                <div style={{display:'flex', alignItems:'center', gap:8}}>
                   <Avatar nombre={a.nombre} apellido={a.apellido} size={24} fontSize={8} />
-                  <span style={{ fontSize:13 }}>{a.nombre} {a.apellido}</span>
+                  <span style={{fontSize:13}}>{a.nombre} {a.apellido}</span>
                 </div>
-                <button className="btn-pri" style={{ fontSize:11, padding:'4px 12px' }}
-                  onClick={() => agregarAlumnoAClase(a.id, modalAgregar.esRec)}>
-                  Agregar
-                </button>
+                <button className="btn-pri" style={{fontSize:11, padding:'4px 12px'}}
+                  onClick={() => agregarAlumnoAClase(a.id, modalAgregar.esRec)}>Agregar</button>
               </div>
             ))
           })()}
         </Modal>
       )}
 
-      {/* ============================
-          MODAL: Mover alumno
-      ============================= */}
+      {/* ====== MODAL: Mover alumno ====== */}
       {modalMover && (
-        <Modal
-          title="Mover alumno a otra clase"
-          onClose={() => setModalMover(null)}
-          footer={<button className="btn-sec" onClick={() => setModalMover(null)}>Cancelar</button>}
-        >
-          <div style={{ fontSize:12, color:'var(--sl-m)', marginBottom:14 }}>
-            Seleccioná la clase de destino:
-          </div>
+        <Modal title="Mover a otra clase" onClose={() => setModalMover(null)}
+          footer={<button className="btn-sec" onClick={() => setModalMover(null)}>Cancelar</button>}>
+          <div style={{fontSize:12, color:'var(--sl-m)', marginBottom:14}}>Seleccioná la clase de destino:</div>
           {clases.filter(c => c.id !== modalMover.clase.id).map(c => {
             const col = colorInstructor(c.instructor_id)
             return (
-              <div key={c.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 0', borderBottom:'1px solid var(--border)' }}>
+              <div key={c.id} style={{display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 0', borderBottom:'1px solid var(--border)'}}>
                 <div>
-                  <div style={{ fontSize:13, fontWeight:500 }}>{c.nombre}</div>
-                  <div style={{ fontSize:11, color:'var(--sl-m)' }}>
-                    {c.fecha} · {c.hora?.slice(0,5)} ·&nbsp;
-                    <span style={{ color: col.border }}>{c.instructores?.nombre} {c.instructores?.apellido}</span>
-                  </div>
+                  <div style={{fontSize:13, fontWeight:500}}>{c.nombre}</div>
+                  <div style={{fontSize:11, color:'var(--sl-m)'}}>{c.fecha} · {c.hora?.slice(0,5)} · <span style={{color:col.border}}>{c.instructores?.nombre} {c.instructores?.apellido}</span></div>
                 </div>
-                <button className="btn-pri" style={{ fontSize:11, padding:'4px 12px' }}
-                  onClick={() => moverAlumno(c.id)}>
-                  Mover
-                </button>
+                <button className="btn-pri" style={{fontSize:11, padding:'4px 12px'}} onClick={() => moverAlumno(c.id)}>Mover</button>
               </div>
             )
           })}
