@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import Modal from '../components/Modal'
 import Avatar from '../components/Avatar'
 
-const emptyForm = { nombre:'', apellido:'', telefono:'', especialidad:'' }
+const emptyForm = { nombre:'', apellido:'', telefono:'', whatsapp:'', especialidad:'' }
 
 export default function Instructores() {
   const [instructores, setInstructores] = useState([])
@@ -24,8 +24,7 @@ export default function Instructores() {
     const { data } = await supabase
       .from('instructores')
       .select('*, alumnos(id), clases(id)')
-      .eq('activo', true)
-      .order('apellido')
+      .eq('activo', true).order('apellido')
     setInstructores(data || [])
     setLoading(false)
   }
@@ -33,7 +32,8 @@ export default function Instructores() {
   function openModal(inst = null) {
     setForm(inst ? {
       id: inst.id, nombre: inst.nombre, apellido: inst.apellido,
-      telefono: inst.telefono || '', especialidad: inst.especialidad || ''
+      telefono: inst.telefono || '', whatsapp: inst.whatsapp || '',
+      especialidad: inst.especialidad || '',
     } : emptyForm)
     setModal(true)
   }
@@ -41,7 +41,11 @@ export default function Instructores() {
   async function handleSave() {
     if (!form.nombre || !form.apellido) return
     setSaving(true)
-    const payload = { nombre: form.nombre, apellido: form.apellido, telefono: form.telefono, especialidad: form.especialidad, activo: true }
+    const payload = {
+      nombre: form.nombre, apellido: form.apellido,
+      telefono: form.telefono, whatsapp: form.whatsapp,
+      especialidad: form.especialidad, activo: true,
+    }
     if (form.id) {
       await supabase.from('instructores').update(payload).eq('id', form.id)
     } else {
@@ -58,7 +62,7 @@ export default function Instructores() {
     fetchData()
   }
 
-  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+  const set = k => e => setForm(f => ({...f, [k]: e.target.value}))
 
   return (
     <>
@@ -67,12 +71,10 @@ export default function Instructores() {
         {loading ? <div className="loading">Cargando…</div> : (
           <table className="tbl">
             <thead>
-              <tr><th>Instructor</th><th>Especialidad</th><th>Teléfono</th><th>Alumnos</th><th>Clases totales</th><th></th></tr>
+              <tr><th>Instructor</th><th>Especialidad</th><th>Teléfono</th><th>WhatsApp</th><th>Alumnos</th><th>Clases</th><th></th></tr>
             </thead>
             <tbody>
-              {instructores.length === 0 && (
-                <tr><td colSpan={6} className="empty">No hay instructores registrados</td></tr>
-              )}
+              {instructores.length === 0 && <tr><td colSpan={7} className="empty">No hay instructores registrados</td></tr>}
               {instructores.map(i => (
                 <tr key={i.id}>
                   <td>
@@ -81,15 +83,22 @@ export default function Instructores() {
                       <span style={{fontWeight:500}}>{i.nombre} {i.apellido}</span>
                     </div>
                   </td>
-                  <td>{i.especialidad || '—'}</td>
-                  <td>{i.telefono || '—'}</td>
-                  <td>{(i.alumnos || []).length}</td>
-                  <td>{(i.clases || []).length}</td>
+                  <td>{i.especialidad||'—'}</td>
+                  <td>{i.telefono||'—'}</td>
+                  <td>
+                    {i.whatsapp
+                      ? <a href={`https://wa.me/${i.whatsapp.replace(/\D/g,'')}`} target="_blank" rel="noreferrer"
+                          style={{color:'#25D366', fontSize:12, textDecoration:'none', fontWeight:500}}>
+                          {i.whatsapp}
+                        </a>
+                      : <span style={{color:'var(--border)'}}>—</span>
+                    }
+                  </td>
+                  <td>{(i.alumnos||[]).length}</td>
+                  <td>{(i.clases||[]).length}</td>
                   <td style={{display:'flex', gap:6}}>
-                    <button className="btn-sec" style={{fontSize:11,padding:'4px 10px'}}
-                      onClick={() => openModal(i)}>Editar</button>
-                    <button className="btn-danger" style={{fontSize:11,padding:'4px 10px'}}
-                      onClick={() => handleDelete(i.id)}>✕</button>
+                    <button className="btn-sec" style={{fontSize:11,padding:'4px 10px'}} onClick={() => openModal(i)}>Editar</button>
+                    <button className="btn-danger" style={{fontSize:11,padding:'4px 10px'}} onClick={() => handleDelete(i.id)}>✕</button>
                   </td>
                 </tr>
               ))}
@@ -99,16 +108,12 @@ export default function Instructores() {
       </div>
 
       {modal && (
-        <Modal
-          title={form.id ? 'Editar instructor' : 'Nuevo instructor'}
+        <Modal title={form.id?'Editar instructor':'Nuevo instructor'}
           onClose={() => setModal(false)}
           footer={<>
             <button className="btn-sec" onClick={() => setModal(false)}>Cancelar</button>
-            <button className="btn-pri" onClick={handleSave} disabled={saving}>
-              {saving ? 'Guardando…' : 'Guardar instructor'}
-            </button>
-          </>}
-        >
+            <button className="btn-pri" onClick={handleSave} disabled={saving}>{saving?'Guardando…':'Guardar instructor'}</button>
+          </>}>
           <div className="form-row2">
             <div className="form-row" style={{marginBottom:0}}>
               <label className="form-lbl">Nombre</label>
@@ -122,6 +127,13 @@ export default function Instructores() {
           <div className="form-row" style={{marginTop:14}}>
             <label className="form-lbl">Teléfono</label>
             <input className="form-inp" value={form.telefono} onChange={set('telefono')} placeholder="+54 9 ..." />
+          </div>
+          <div className="form-row">
+            <label className="form-lbl">WhatsApp (número para enviar mensajes a alumnos)</label>
+            <input className="form-inp" value={form.whatsapp} onChange={set('whatsapp')} placeholder="+54 9 3765 ..." />
+            <div style={{fontSize:11, color:'var(--sl-m)', marginTop:4}}>
+              Formato internacional: +54 9 seguido del número sin espacios
+            </div>
           </div>
           <div className="form-row">
             <label className="form-lbl">Especialidad</label>
