@@ -152,7 +152,7 @@ export default function Alumnos({ esAdmin }) {
                       <td className="col-sticky">
                         <div style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}} onClick={() => window.dispatchEvent(new CustomEvent('open-ficha-alumno',{detail:a.id}))}>
                           <Avatar nombre={a.nombre} apellido={a.apellido} size={24} fontSize={9}/>
-                          <span style={{fontWeight:500,color:'var(--mg)',whiteSpace:'nowrap'}}>{a.nombre} {a.apellido}</span>
+                          <span style={{fontWeight:500,color:'var(--mg)',whiteSpace:'normal',wordBreak:'break-word',minWidth:100,maxWidth:160,lineHeight:1.3}}>{a.nombre} {a.apellido}</span>
                         </div>
                       </td>
                       <td style={{whiteSpace:'nowrap'}}>{a.plan==='mensual'?'Mensual':'Sueltas'}{a.frecuencia?` · ${a.frecuencia}`:''}</td>
