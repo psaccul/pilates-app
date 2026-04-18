@@ -466,7 +466,7 @@ export default function Calendario({ esAdmin }) {
           </div>
           <div className="form-row2" style={{marginTop:12}}>
             <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Hora</label><input className="form-inp" type="time" value={form.hora} onChange={setF('hora')}/></div>
-            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Sala</label><select className="form-inp" value={form.sala} onChange={setF('sala')}><option value="Sala A">Sala A</option><option value="Sala B">Sala B</option></select></div>
+            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Sala</label><select className="form-inp" value={form.sala} onChange={setF('sala')}><option value="Sala A">Sala A</option><option value="Sala B">Sala B</option><option value="Sala C">Sala C</option></select></div>
           </div>
           <div className="form-row" style={{marginTop:12}}><label className="form-lbl">Capacidad máxima</label><input className="form-inp" type="number" min={1} max={20} value={form.capacidad} onChange={setF('capacidad')}/></div>
         </Modal>
@@ -484,7 +484,7 @@ export default function Calendario({ esAdmin }) {
           </div>
           <div className="form-row2" style={{marginTop:12}}>
             <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Hora</label><input className="form-inp" type="time" value={form.hora} onChange={setF('hora')}/></div>
-            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Sala</label><select className="form-inp" value={form.sala} onChange={setF('sala')}><option value="Sala A">Sala A</option><option value="Sala B">Sala B</option></select></div>
+            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Sala</label><select className="form-inp" value={form.sala} onChange={setF('sala')}><option value="Sala A">Sala A</option><option value="Sala B">Sala B</option><option value="Sala C">Sala C</option></select></div>
           </div>
           <div className="form-row" style={{marginTop:12}}><label className="form-lbl">Capacidad máxima</label><input className="form-inp" type="number" min={1} max={20} value={form.capacidad} onChange={setF('capacidad')}/></div>
         </Modal>

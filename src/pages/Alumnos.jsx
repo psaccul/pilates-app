@@ -7,7 +7,9 @@ import { es } from 'date-fns/locale'
 import { addDays, addWeeks, startOfWeek } from 'date-fns'
 
 const DIAS = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']
-const emptyForm = { nombre:'', apellido:'', telefono:'', plan:'mensual', frecuencia:'', instructor_id:'', notas:'' }
+const emptyForm = { nombre:'', apellido:'', telefono:'', plan:'mensual', frecuencia:'', instructor_id:'', notas:'', nivel:'A', clases_semana:2 }
+
+const NIVELES = { A:'Principiante (A)', B:'Intermedio (B)', C:'Avanzado (C)' }
 const emptyHorario = { dia_semana:'1', hora:'08:00', instructor_id:'', sala:'Sala A', nombre_clase:'' }
 
 export default function Alumnos({ esAdmin }) {
@@ -49,14 +51,14 @@ export default function Alumnos({ esAdmin }) {
   }
 
   function openModal(alumno = null) {
-    setForm(alumno ? { id:alumno.id, nombre:alumno.nombre, apellido:alumno.apellido, telefono:alumno.telefono||'', plan:alumno.plan, frecuencia:alumno.frecuencia||'', instructor_id:alumno.instructor_id||'', notas:alumno.notas||'' } : emptyForm)
+    setForm(alumno ? { id:alumno.id, nombre:alumno.nombre, apellido:alumno.apellido, telefono:alumno.telefono||'', plan:alumno.plan, frecuencia:alumno.frecuencia||'', instructor_id:alumno.instructor_id||'', notas:alumno.notas||'', nivel:alumno.nivel||'A', clases_semana:alumno.clases_semana||2 } : emptyForm)
     setModal(true)
   }
 
   async function handleSave() {
     if (!form.nombre || !form.apellido) return
     setSaving(true)
-    const payload = { nombre:form.nombre, apellido:form.apellido, telefono:form.telefono, plan:form.plan, frecuencia:form.frecuencia, instructor_id:form.instructor_id||null, notas:form.notas, activo:true }
+    const payload = { nombre:form.nombre, apellido:form.apellido, telefono:form.telefono, plan:form.plan, frecuencia:form.frecuencia, instructor_id:form.instructor_id||null, notas:form.notas, nivel:form.nivel||'A', clases_semana:Number(form.clases_semana)||2, activo:true }
     if (form.id) await supabase.from('alumnos').update(payload).eq('id',form.id)
     else await supabase.from('alumnos').insert(payload)
     setSaving(false); setModal(false); fetchData()
@@ -140,7 +142,7 @@ export default function Alumnos({ esAdmin }) {
               <thead>
                 <tr>
                   <th style={{position:'sticky',left:0,background:'var(--sl-l)',zIndex:2}}>Alumno</th>
-                  <th>Plan</th><th>Instructor</th><th>Teléfono</th><th>Notas</th><th>Estado</th><th>Acciones</th>
+                  <th>Nivel</th><th>Plan</th><th>Clases/sem</th><th>Instructor</th><th>Notas</th><th>Estado</th><th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -156,8 +158,12 @@ export default function Alumnos({ esAdmin }) {
                         </div>
                       </td>
                       <td style={{whiteSpace:'nowrap'}}>{a.plan==='mensual'?'Mensual':'Sueltas'}{a.frecuencia?` · ${a.frecuencia}`:''}</td>
+                      <td>
+                        {a.nivel && <span style={{fontSize:11,fontWeight:700,padding:'2px 9px',borderRadius:99,background:a.nivel==='A'?'#E4F4EE':a.nivel==='B'?'#E6F1FB':'#F0EAF8',color:a.nivel==='A'?'#2D7A5A':a.nivel==='B'?'#185FA5':'#6A3A8A'}}>{a.nivel}</span>}
+                      </td>
+                      <td style={{whiteSpace:'nowrap'}}>{a.plan==='mensual'?'Mensual':'Sueltas'}{a.frecuencia?` · ${a.frecuencia}`:''}</td>
+                      <td style={{textAlign:'center',fontFamily:'var(--font-num)',fontWeight:500}}>{a.clases_semana||2}</td>
                       <td style={{whiteSpace:'nowrap'}}>{a.instructores?`${a.instructores.nombre} ${a.instructores.apellido}`:'—'}</td>
-                      <td style={{whiteSpace:'nowrap'}}>{a.telefono||'—'}</td>
                       <td style={{maxWidth:160}}>
                         {a.notas ? <span title={a.notas} style={{fontSize:11,color:'var(--sl-m)',cursor:'help'}}>{a.notas.length>30?a.notas.slice(0,30)+'…':a.notas}</span> : <span style={{color:'var(--border)'}}>—</span>}
                       </td>
@@ -190,6 +196,10 @@ export default function Alumnos({ esAdmin }) {
           <div className="form-row" style={{marginTop:13}}><label className="form-lbl">Teléfono (WhatsApp)</label><input className="form-inp" value={form.telefono} onChange={set('telefono')} placeholder="+54 9 3765 ..."/></div>
           <div className="form-row2">
             <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Plan</label><select className="form-inp" value={form.plan} onChange={set('plan')}><option value="mensual">Plan mensual</option><option value="pack">Pack prepago</option><option value="sueltas">Clases sueltas</option></select></div>
+            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Clases por semana</label><select className="form-inp" value={form.clases_semana} onChange={set('clases_semana')}><option value={1}>1 clase/semana</option><option value={2}>2 clases/semana</option><option value={3}>3 clases/semana</option><option value={4}>4 clases/semana</option></select></div>
+          </div>
+          <div className="form-row2" style={{marginTop:0}}>
+            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Nivel de Pilates</label><select className="form-inp" value={form.nivel} onChange={set('nivel')}><option value="A">A — Principiante</option><option value="B">B — Intermedio</option><option value="C">C — Avanzado</option></select></div>
             <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Frecuencia</label><select className="form-inp" value={form.frecuencia} onChange={set('frecuencia')}><option value="">—</option><option value="1×/semana">1×/semana</option><option value="2×/semana">2×/semana</option><option value="3×/semana">3×/semana</option><option value="Libre">Libre</option></select></div>
           </div>
           <div className="form-row" style={{marginTop:13}}><label className="form-lbl">Instructor asignado</label><select className="form-inp" value={form.instructor_id} onChange={set('instructor_id')}><option value="">Sin asignar</option>{instructores.map(i=><option key={i.id} value={i.id}>{i.nombre} {i.apellido}</option>)}</select></div>
@@ -217,7 +227,7 @@ export default function Alumnos({ esAdmin }) {
             <div className="form-row" style={{marginTop:10}}><label className="form-lbl">Nombre de la clase</label><input className="form-inp" value={horarioForm.nombre_clase} onChange={setH('nombre_clase')} placeholder="Ej: Reformer Intermedio"/></div>
             <div className="form-row2">
               <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Instructor</label><select className="form-inp" value={horarioForm.instructor_id} onChange={setH('instructor_id')}><option value="">Sin asignar</option>{instructores.map(i=><option key={i.id} value={i.id}>{i.nombre} {i.apellido}</option>)}</select></div>
-              <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Sala</label><select className="form-inp" value={horarioForm.sala} onChange={setH('sala')}><option value="Sala A">Sala A</option><option value="Sala B">Sala B</option></select></div>
+              <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Sala</label><select className="form-inp" value={horarioForm.sala} onChange={setH('sala')}><option value="Sala A">Sala A</option><option value="Sala B">Sala B</option><option value="Sala C">Sala C</option></select></div>
             </div>
             <button className="btn-pri" style={{marginTop:10,fontSize:12}} onClick={agregarHorario} disabled={saving}>{saving?'…':'+ Agregar'}</button>
           </div>
