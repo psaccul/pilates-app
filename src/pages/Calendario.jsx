@@ -25,6 +25,15 @@ const ESTADOS = {
   ausente_sin_aviso: { icon:'✗', label:'Ausente s/aviso', bg:'#FDECEA',    text:'#B03030',     border:'#F09595',       barColor:'#E24B4A' },
 }
 
+const MOTIVOS_CANCELACION = [
+  { value:'', label:'Sin motivo especificado' },
+  { value:'enfermedad', label:'Enfermedad' },
+  { value:'viaje', label:'Viaje' },
+  { value:'trabajo', label:'Trabajo' },
+  { value:'personal', label:'Motivo personal' },
+  { value:'otro', label:'Otro' },
+]
+
 export default function Calendario({ esAdmin }) {
   const [refDate, setRefDate]       = useState(new Date())
   const [vistaMovil, setVistaMovil] = useState('semanal')
@@ -117,8 +126,9 @@ export default function Calendario({ esAdmin }) {
     }
   }
 
-  // Verificar capacidad antes de agregar
+  // Verificar capacidad — Sala B sin límite
   function capacidadDisponible(clase) {
+    if (clase.sala === 'Sala B') return 999
     const ocupados = (clase.asistencias||[]).length
     return clase.capacidad - ocupados
   }
@@ -155,8 +165,29 @@ export default function Calendario({ esAdmin }) {
     setModalClase(null); fetchClases()
   }
 
+  // Modal motivo cancelación
+  const [modalMotivo, setModalMotivo] = useState(null) // { asistId, nuevoEstado }
+  const MOTIVOS = [
+    { value:'cambio_instructor', label:'Cambio de instructor' },
+    { value:'baja_instituto',    label:'Baja del instituto' },
+    { value:'personal',          label:'Motivo personal' },
+    { value:'sin_motivo',        label:'Sin motivo' },
+  ]
+
   async function cambiarEstado(asistId, nuevoEstado) {
-    await supabase.from('asistencias').update({ estado_asistencia:nuevoEstado, asistio:nuevoEstado==='presente' }).eq('id',asistId)
+    // Si es ausencia, pedir motivo
+    if (nuevoEstado === 'ausente_con_aviso' || nuevoEstado === 'ausente_sin_aviso') {
+      setModalMotivo({ asistId, nuevoEstado })
+      return
+    }
+    await supabase.from('asistencias').update({ estado_asistencia:nuevoEstado, asistio:nuevoEstado==='presente', motivo_cancelacion:null }).eq('id',asistId)
+    await refrescarClase(modalClase.id)
+  }
+
+  async function confirmarMotivo(motivo) {
+    if (!modalMotivo) return
+    await supabase.from('asistencias').update({ estado_asistencia:modalMotivo.nuevoEstado, asistio:false, motivo_cancelacion:motivo }).eq('id',modalMotivo.asistId)
+    setModalMotivo(null)
     await refrescarClase(modalClase.id)
   }
 
@@ -230,7 +261,7 @@ export default function Calendario({ esAdmin }) {
     const col=colInst(c.instructor_id), res=resumen(c)
     const tieneRec=(c.asistencias||[]).some(a=>a.recuperacion)
     const hayAusSA=res.sinAviso>0
-    const lleno = c.capacidad > 0 && (c.asistencias||[]).length >= c.capacidad
+    const lleno = c.sala !== 'Sala B' && c.capacidad > 0 && (c.asistencias||[]).length >= c.capacidad
     return (
       <div draggable onDragStart={e=>onDragStart(e,c.id)} onDragEnd={()=>setDragging(null)}
         onClick={() => { setModalClase(c); setEditando(false) }}
@@ -389,7 +420,10 @@ export default function Calendario({ esAdmin }) {
             <span style={{fontSize:11,padding:'3px 9px',borderRadius:99,background:'var(--sl-l)',color:'var(--sl-m)',fontFamily:'var(--font-num)'}}>{modalClase.hora?.slice(0,5)} · {modalClase.fecha}</span>
             {/* Capacidad */}
             {(() => {
-              const tot=(modalClase.asistencias||[]).length, cap=modalClase.capacidad
+              const tot=(modalClase.asistencias||[]).length
+              const cap=modalClase.capacidad
+              const ilimitado = modalClase.sala==='Sala B' || cap===0
+              if (ilimitado) return <span style={{fontSize:11,padding:'3px 9px',borderRadius:99,background:'#E4F4EE',color:'#2D7A5A',fontWeight:500}}>{tot} alumno{tot!==1?'s':''} · sin límite</span>
               const color=tot>=cap?'#B03030':'#2D7A5A', bg=tot>=cap?'#FDECEA':'#E4F4EE'
               return <span style={{fontSize:11,padding:'3px 9px',borderRadius:99,background:bg,color,fontWeight:500,fontFamily:'var(--font-num)'}}>{tot}/{cap} lugares</span>
             })()}
@@ -466,7 +500,7 @@ export default function Calendario({ esAdmin }) {
           </div>
           <div className="form-row2" style={{marginTop:12}}>
             <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Hora</label><input className="form-inp" type="time" value={form.hora} onChange={setF('hora')}/></div>
-            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Sala</label><select className="form-inp" value={form.sala} onChange={setF('sala')}><option value="Sala A">Sala A</option><option value="Sala B">Sala B</option><option value="Sala C">Sala C</option></select></div>
+            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Sala</label><select className="form-inp" value={form.sala} onChange={setF('sala')}><option value="Sala A">Sala A</option><option value="Sala B">Sala B</option></select></div>
           </div>
           <div className="form-row" style={{marginTop:12}}><label className="form-lbl">Capacidad máxima</label><input className="form-inp" type="number" min={1} max={20} value={form.capacidad} onChange={setF('capacidad')}/></div>
         </Modal>
@@ -484,7 +518,7 @@ export default function Calendario({ esAdmin }) {
           </div>
           <div className="form-row2" style={{marginTop:12}}>
             <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Hora</label><input className="form-inp" type="time" value={form.hora} onChange={setF('hora')}/></div>
-            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Sala</label><select className="form-inp" value={form.sala} onChange={setF('sala')}><option value="Sala A">Sala A</option><option value="Sala B">Sala B</option><option value="Sala C">Sala C</option></select></div>
+            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Sala</label><select className="form-inp" value={form.sala} onChange={setF('sala')}><option value="Sala A">Sala A</option><option value="Sala B">Sala B</option></select></div>
           </div>
           <div className="form-row" style={{marginTop:12}}><label className="form-lbl">Capacidad máxima</label><input className="form-inp" type="number" min={1} max={20} value={form.capacidad} onChange={setF('capacidad')}/></div>
         </Modal>
@@ -501,12 +535,13 @@ export default function Calendario({ esAdmin }) {
             </button>
           </>}>
           {(() => {
-            const cap=modalAgregar.clase.capacidad, ocupados=(modalAgregar.clase.asistencias||[]).length, libre=cap-ocupados
+            const esIlimitada = modalAgregar.clase.sala === 'Sala B'
+            const cap=modalAgregar.clase.capacidad, ocupados=(modalAgregar.clase.asistencias||[]).length, libre=esIlimitada?999:cap-ocupados
             return (
-              <div style={{fontSize:12,padding:'8px 12px',background:libre<=0?'#FDECEA':'#E4F4EE',borderRadius:8,marginBottom:12,color:libre<=0?'#B03030':'#2D7A5A'}}>
-                {libre<=0
+              <div style={{fontSize:12,padding:'8px 12px',background:(!esIlimitada&&libre<=0)?'#FDECEA':'#E4F4EE',borderRadius:8,marginBottom:12,color:(!esIlimitada&&libre<=0)?'#B03030':'#2D7A5A'}}>
+                {!esIlimitada&&libre<=0
                   ? `⚠ Esta clase está completa (${ocupados}/${cap}). No se pueden agregar más alumnos.`
-                  : `Lugares disponibles: ${libre} de ${cap}. Podés seleccionar hasta ${libre} alumno${libre!==1?'s':''}.`
+                  : esIlimitada ? `Sala B — sin límite de capacidad.` : `Lugares disponibles: ${libre} de ${cap}.`
                 }
               </div>
             )
@@ -516,7 +551,8 @@ export default function Calendario({ esAdmin }) {
             const ya=(modalAgregar.clase.asistencias||[]).map(a=>a.alumno_id)
             const disp=alumnos.filter(a=>!ya.includes(a.id))
             if (disp.length===0) return <div className="empty">No hay alumnos disponibles</div>
-            const libre=modalAgregar.clase.capacidad-(modalAgregar.clase.asistencias||[]).length
+            const esIlimitada = modalAgregar.clase.sala === 'Sala B'
+            const libre=esIlimitada?999:modalAgregar.clase.capacidad-(modalAgregar.clase.asistencias||[]).length
             return disp.map(a=>{
               const sel=seleccionados.includes(a.id)
               const disabled=!sel&&seleccionados.length>=libre
@@ -542,15 +578,16 @@ export default function Calendario({ esAdmin }) {
           <div style={{fontSize:12,color:'var(--sl-m)',marginBottom:12}}>Seleccioná la clase de destino:</div>
           {clases.filter(c=>c.id!==modalMover.clase.id).map(c=>{
             const col=colInst(c.instructor_id)
-            const libre=c.capacidad-(c.asistencias||[]).length
-            const llena=libre<=0
+            const esIlimitada = c.sala === 'Sala B'
+            const libre=esIlimitada?999:c.capacidad-(c.asistencias||[]).length
+            const llena=!esIlimitada&&libre<=0
             return(
               <div key={c.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid var(--border)',opacity:llena?0.5:1}}>
                 <div>
                   <div style={{fontSize:13,fontWeight:500}}>{c.nombre}</div>
                   <div style={{fontSize:11,color:'var(--sl-m)'}}>{c.fecha} · {c.hora?.slice(0,5)} · <span style={{color:col.border}}>{c.instructores?.nombre} {c.instructores?.apellido}</span></div>
                   <div style={{fontSize:10,color:llena?'#B03030':'#2D7A5A',fontFamily:'var(--font-num)'}}>
-                    {llena?`Clase llena (${c.capacidad}/${c.capacidad})`:`${libre} lugar${libre!==1?'es':''} libre${libre!==1?'s':''}`}
+                    {llena?`Clase llena`:esIlimitada?'Sala B — sin límite':`${libre} lugar${libre!==1?'es':''} libre${libre!==1?'s':''}`}
                   </div>
                 </div>
                 <button className="btn-pri" style={{fontSize:11,padding:'4px 12px'}} onClick={() => moverAlumno(c.id)} disabled={llena}>
@@ -559,6 +596,30 @@ export default function Calendario({ esAdmin }) {
               </div>
             )
           })}
+        </Modal>
+      )}
+
+      {/* ====== MODAL: Motivo cancelación ====== */}
+      {modalMotivo&&(
+        <Modal title="Motivo de la ausencia" onClose={() => setModalMotivo(null)}
+          footer={<button className="btn-sec" onClick={() => setModalMotivo(null)}>Cancelar</button>}>
+          <div style={{fontSize:12,color:'var(--sl-m)',marginBottom:14}}>
+            {modalMotivo.nuevoEstado==='ausente_con_aviso'?'El alumno avisó que no puede asistir.':'El alumno no avisó su ausencia.'} ¿Cuál es el motivo?
+          </div>
+          {[
+            {value:'cambio_instructor', label:'Cambio de instructor', icon:'👤'},
+            {value:'baja_instituto',    label:'Baja del instituto',   icon:'🚪'},
+            {value:'sin_motivo',        label:'Sin motivo especificado', icon:'—'},
+            {value:'otro',             label:'Otro motivo',           icon:'📝'},
+          ].map(m=>(
+            <div key={m.value} onClick={() => confirmarMotivo(m.value)}
+              style={{display:'flex',alignItems:'center',gap:12,padding:'12px 14px',marginBottom:6,borderRadius:10,border:'1px solid var(--border)',cursor:'pointer',transition:'all 0.12s'}}
+              onMouseEnter={e=>e.currentTarget.style.background='var(--sl-l)'}
+              onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+              <span style={{fontSize:20}}>{m.icon}</span>
+              <span style={{fontSize:13,fontWeight:500}}>{m.label}</span>
+            </div>
+          ))}
         </Modal>
       )}
     </div>

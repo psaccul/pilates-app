@@ -104,14 +104,14 @@ export default function Layout() {
       .eq('id', alumnoId).single()
     setFichaData(data)
     setFichaForm({ nombre:data.nombre, apellido:data.apellido, telefono:data.telefono||'',
-      plan:data.plan, frecuencia:data.frecuencia||'', instructor_id:data.instructor_id||'', notas:data.notas||'' })
+      plan:data.plan, instructor_id:data.instructor_id||'', notas:data.notas||'' })
   }
 
   async function guardarFicha() {
     setFichaSaving(true)
     await supabase.from('alumnos').update({
       nombre:fichaForm.nombre, apellido:fichaForm.apellido, telefono:fichaForm.telefono,
-      plan:fichaForm.plan, frecuencia:fichaForm.frecuencia,
+      plan:fichaForm.plan,
       instructor_id:fichaForm.instructor_id||null, notas:fichaForm.notas,
     }).eq('id', fichaData.id)
     setFichaSaving(false); setFichaEdit(false)
@@ -236,7 +236,6 @@ export default function Layout() {
                   <div style={{fontSize:16,fontWeight:500}}>{fichaData.nombre} {fichaData.apellido}</div>
                   <div style={{fontSize:11,color:'var(--sl-m)',marginTop:2}}>
                     {fichaData.plan==='mensual'?'Plan mensual':fichaData.plan==='pack'?'Pack prepago':'Clases sueltas'}
-                    {fichaData.frecuencia?` · ${fichaData.frecuencia}`:''}
                   </div>
                 </div>
               </div>
@@ -272,11 +271,8 @@ export default function Layout() {
                 <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Apellido</label><input className="form-inp" value={fichaForm.apellido} onChange={setFF('apellido')}/></div>
               </div>
               <div className="form-row" style={{marginTop:12}}><label className="form-lbl">Teléfono</label><input className="form-inp" value={fichaForm.telefono} onChange={setFF('telefono')} placeholder="+54 9 ..."/></div>
-              <div className="form-row2">
-                <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Plan</label><select className="form-inp" value={fichaForm.plan} onChange={setFF('plan')}><option value="mensual">Plan mensual</option><option value="pack">Pack prepago</option><option value="sueltas">Clases sueltas</option></select></div>
-                <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Frecuencia</label><select className="form-inp" value={fichaForm.frecuencia} onChange={setFF('frecuencia')}><option value="">—</option><option value="1×/semana">1×/semana</option><option value="2×/semana">2×/semana</option><option value="3×/semana">3×/semana</option><option value="Libre">Libre</option></select></div>
-              </div>
-              <div className="form-row" style={{marginTop:12}}><label className="form-lbl">Instructor</label><select className="form-inp" value={fichaForm.instructor_id} onChange={setFF('instructor_id')}><option value="">Sin asignar</option>{instructores.map(i=><option key={i.id} value={i.id}>{i.nombre} {i.apellido}</option>)}</select></div>
+              <div className="form-row"><label className="form-lbl">Plan</label><select className="form-inp" value={fichaForm.plan} onChange={setFF('plan')}><option value="mensual">Plan mensual</option><option value="pack">Pack prepago</option><option value="sueltas">Clases sueltas</option></select></div>
+              <div className="form-row"><label className="form-lbl">Instructor</label><select className="form-inp" value={fichaForm.instructor_id} onChange={setFF('instructor_id')}><option value="">Sin asignar</option>{instructores.map(i=><option key={i.id} value={i.id}>{i.nombre} {i.apellido}</option>)}</select></div>
               <div className="form-row"><label className="form-lbl">Notas / Patologías</label><textarea className="form-inp" value={fichaForm.notas} onChange={setFF('notas')} placeholder="Ej: Hernia lumbar L4-L5..."/></div>
             </>
           )}

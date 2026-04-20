@@ -22,6 +22,8 @@ export default function Reportes({ esAdmin }) {
   const [alumnosReport, setAlumnosReport]   = useState([])
   const [cumplimiento, setCumplimiento]     = useState([])
 
+  const [reporteInstructores, setReporteInstructores] = useState([])
+
   useEffect(() => { fetchReporte() }, [mes, tab])
 
   async function fetchReporte() {
@@ -64,7 +66,48 @@ export default function Reportes({ esAdmin }) {
       setResumen({ clases:(clases||[]).length, asistencias:totalAsist, promedioDia:diasArr.length?Math.round(totalAsist/diasArr.length):0, diaPico:picoObj?picoObj.dia:'—' })
     }
 
-    if (tab === 'alumnos') {
+    if (tab === 'instructores') {
+      const inicio2 = format(startOfMonth(mesDate),'yyyy-MM-dd')
+      const fin2    = format(endOfMonth(mesDate),  'yyyy-MM-dd')
+
+      const { data: ins } = await supabase.from('instructores').select('id,nombre,apellido').eq('activo',true).order('apellido')
+      const { data: clases } = await supabase.from('clases')
+        .select('id,nombre,fecha,hora,sala,instructor_id,asistencias(id,estado_asistencia,motivo_cancelacion)')
+        .gte('fecha',inicio2).lte('fecha',fin2)
+
+      const data = (ins||[]).map(inst => {
+        const miClases = (clases||[]).filter(c=>c.instructor_id===inst.id)
+        const total = miClases.length
+
+        // Una clase se considera "cancelada" si TODOS sus alumnos tienen ausencia
+        // O si no tiene alumnos (0 asistencias registradas)
+        let dadas = 0, canceladas = 0
+        const motivosConteo = { cambio_instructor:0, baja_instituto:0, sin_motivo:0, otro:0 }
+
+        miClases.forEach(c => {
+          const asis = c.asistencias||[]
+          if (asis.length === 0) { dadas++; return }
+          const hayPresente = asis.some(a=>a.estado_asistencia==='presente')
+          if (hayPresente) {
+            dadas++
+          } else {
+            canceladas++
+            // Contar motivos de cancelación
+            asis.forEach(a => {
+              if (a.motivo_cancelacion && motivosConteo[a.motivo_cancelacion] !== undefined) {
+                motivosConteo[a.motivo_cancelacion]++
+              } else if (a.motivo_cancelacion) {
+                motivosConteo.otro++
+              }
+            })
+          }
+        })
+
+        return { ...inst, total, dadas, canceladas, motivosConteo }
+      })
+
+      setReporteInstructores(data)
+    }
       const { data: als } = await supabase.from('alumnos')
         .select('*, instructores(nombre,apellido), pagos(pagado,monto), asistencias(asistio,estado_asistencia,recuperacion)')
         .eq('activo',true).order('apellido')
@@ -123,7 +166,8 @@ export default function Reportes({ esAdmin }) {
     <>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14,flexWrap:'wrap',gap:10}}>
         <div className="tabs" style={{marginBottom:0}}>
-          <div className={`tab${tab==='cumplimiento'?' active':''}`} onClick={() => setTab('cumplimiento')}>Cumplimiento mensual</div>
+          <div className={`tab${tab==='cumplimiento'?' active':''}`} onClick={() => setTab('cumplimiento')}>Cumplimiento</div>
+          <div className={`tab${tab==='instructores'?' active':''}`} onClick={() => setTab('instructores')}>Por instructor</div>
           <div className={`tab${tab==='asistencia'?' active':''}`} onClick={() => setTab('asistencia')}>Asistencia</div>
           <div className={`tab${tab==='alumnos'?' active':''}`} onClick={() => setTab('alumnos')}>Estado alumnos</div>
         </div>
@@ -230,6 +274,66 @@ export default function Reportes({ esAdmin }) {
                   Los marcados en rojo no tuvieron ninguna asistencia este mes.
                 </div>
               </div>
+            </>
+          )}
+
+          {/* ===== POR INSTRUCTOR ===== */}
+          {tab === 'instructores' && (
+            <>
+              <div className="stats" style={{gridTemplateColumns:'repeat(3,1fr)',marginBottom:16}}>
+                <div className="sc" style={{'--acc':'var(--teal)'}}>
+                  <div className="sc-lbl">Clases dadas</div>
+                  <div className="sc-val">{reporteInstructores.reduce((s,i)=>s+i.dadas,0)}</div>
+                </div>
+                <div className="sc" style={{'--acc':'#E24B4A'}}>
+                  <div className="sc-lbl">Canceladas</div>
+                  <div className="sc-val">{reporteInstructores.reduce((s,i)=>s+i.canceladas,0)}</div>
+                </div>
+                <div className="sc" style={{'--acc':'var(--blue)'}}>
+                  <div className="sc-lbl">Total programadas</div>
+                  <div className="sc-val">{reporteInstructores.reduce((s,i)=>s+i.total,0)}</div>
+                </div>
+              </div>
+
+              {reporteInstructores.map(inst => (
+                <div key={inst.id} style={{border:'1px solid var(--border)',borderRadius:12,marginBottom:12,overflow:'hidden'}}>
+                  {/* Header instructor */}
+                  <div style={{padding:'12px 16px',background:'var(--sl-l)',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
+                    <div style={{fontWeight:500,fontSize:14}}>{inst.nombre} {inst.apellido}</div>
+                    <div style={{display:'flex',gap:10}}>
+                      <span style={{fontSize:12,padding:'3px 10px',borderRadius:99,background:'#E4F4EE',color:'#2D7A5A',fontFamily:'var(--font-num)',fontWeight:600}}>✓ {inst.dadas} dadas</span>
+                      {inst.canceladas>0&&<span style={{fontSize:12,padding:'3px 10px',borderRadius:99,background:'#FDECEA',color:'#B03030',fontFamily:'var(--font-num)',fontWeight:600}}>✗ {inst.canceladas} canceladas</span>}
+                      <span style={{fontSize:12,padding:'3px 10px',borderRadius:99,background:'var(--white)',color:'var(--sl-m)',fontFamily:'var(--font-num)'}}>Total: {inst.total}</span>
+                    </div>
+                  </div>
+
+                  {/* Detalle motivos si hubo cancelaciones */}
+                  {inst.canceladas > 0 && (
+                    <div style={{padding:'12px 16px'}}>
+                      <div style={{fontSize:11,color:'var(--sl-m)',textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:8}}>Motivos de cancelación</div>
+                      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                        {[
+                          {key:'cambio_instructor', label:'Cambio de instructor', color:'#185FA5', bg:'#E6F1FB'},
+                          {key:'baja_instituto',    label:'Baja del instituto',   color:'#B03030', bg:'#FDECEA'},
+                          {key:'sin_motivo',        label:'Sin motivo',           color:'#7A5010', bg:'#FEF3E2'},
+                          {key:'otro',              label:'Otro',                 color:'#6A3A8A', bg:'#F0EAF8'},
+                        ].filter(m=>inst.motivosConteo[m.key]>0).map(m=>(
+                          <span key={m.key} style={{fontSize:11,padding:'4px 10px',borderRadius:8,background:m.bg,color:m.color,fontWeight:500}}>
+                            {m.label}: <strong style={{fontFamily:'var(--font-num)'}}>{inst.motivosConteo[m.key]}</strong>
+                          </span>
+                        ))}
+                        {Object.values(inst.motivosConteo).every(v=>v===0)&&(
+                          <span style={{fontSize:11,color:'var(--sl-m)'}}>Sin motivos registrados</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {inst.total===0&&<div style={{padding:'12px 16px',fontSize:12,color:'var(--sl-m)'}}>Sin clases programadas este mes.</div>}
+                </div>
+              ))}
+
+              {reporteInstructores.length===0&&<div className="empty">Sin instructores activos</div>}
             </>
           )}
 
