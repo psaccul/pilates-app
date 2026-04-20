@@ -280,7 +280,7 @@ export default function Dashboard({ setPage, esGerente }) {
                 <Avatar nombre={a.nombre} apellido={a.apellido} />
                 <div>
                   <div className="an">{a.nombre} {a.apellido}</div>
-                  <div className="ap">{a.plan==='mensual'?'Plan mensual':a.plan==='pack'?'Pack prepago':'Clases sueltas'}{a.frecuencia?` · ${a.frecuencia}`:''}</div>
+                  <div className="ap">{a.plan==='mensual'?'Plan mensual':a.plan==='pack'?'Pack prepago':'Clases sueltas'}</div>
                 </div>
                 <span className={`est ${ep==='ok'?'e-ok':ep==='pendiente'?'e-pe':'e-ve'}`} style={{marginLeft:'auto'}}>
                   {ep==='ok'?'Al día':ep==='pendiente'?'Pendiente':'Sin pago'}

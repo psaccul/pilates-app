@@ -158,9 +158,13 @@ export default function Alumnos({ esAdmin }) {
                         </div>
                       </td>
                       <td>
-                        {a.nivel && <span style={{fontSize:11,fontWeight:700,padding:'2px 9px',borderRadius:99,background:a.nivel==='A'?'#E4F4EE':a.nivel==='B'?'#E6F1FB':'#F0EAF8',color:a.nivel==='A'?'#2D7A5A':a.nivel==='B'?'#185FA5':'#6A3A8A'}}>{a.nivel}</span>}
+                        {a.nivel
+                          ? <span style={{fontSize:11,fontWeight:600,padding:'2px 9px',borderRadius:99,background:a.nivel==='A'?'#E4F4EE':a.nivel==='B'?'#E6F1FB':'#F0EAF8',color:a.nivel==='A'?'#2D7A5A':a.nivel==='B'?'#185FA5':'#6A3A8A',whiteSpace:'nowrap'}}>
+                            {a.nivel==='A'?'A — Principiante':a.nivel==='B'?'B — Intermedio':'C — Avanzado'}
+                          </span>
+                          : '—'}
                       </td>
-                      <td style={{whiteSpace:'nowrap'}}>{a.plan==='mensual'?'Mensual':a.plan==='pack'?'Pack':'Sueltas'}</td>
+                      <td style={{whiteSpace:'nowrap'}}>{a.plan==='mensual'?'Mensual':a.plan==='pack'?'Prepago':'Sueltas'}</td>
                       <td style={{textAlign:'center',fontFamily:'var(--font-num)',fontWeight:500}}>{a.clases_semana||2}</td>
                       <td style={{whiteSpace:'nowrap'}}>{a.instructores?`${a.instructores.nombre} ${a.instructores.apellido}`:'—'}</td>
                       <td style={{maxWidth:160}}>
