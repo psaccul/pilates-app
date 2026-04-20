@@ -157,14 +157,12 @@ export default function Alumnos({ esAdmin }) {
                           <span style={{fontWeight:500,color:'var(--mg)',whiteSpace:'normal',wordBreak:'break-word',minWidth:100,maxWidth:160,lineHeight:1.3}}>{a.nombre} {a.apellido}</span>
                         </div>
                       </td>
-                      <td>
-                        {a.nivel
-                          ? <span style={{fontSize:11,fontWeight:600,padding:'2px 9px',borderRadius:99,background:a.nivel==='A'?'#E4F4EE':a.nivel==='B'?'#E6F1FB':'#F0EAF8',color:a.nivel==='A'?'#2D7A5A':a.nivel==='B'?'#185FA5':'#6A3A8A',whiteSpace:'nowrap'}}>
-                            {a.nivel==='A'?'A — Principiante':a.nivel==='B'?'B — Intermedio':'C — Avanzado'}
-                          </span>
-                          : '—'}
+                      <td style={{textAlign:'center'}}>
+                        <span style={{fontSize:12,fontWeight:700,color:a.nivel==='A'?'#2D7A5A':a.nivel==='B'?'#185FA5':'#6A3A8A'}}>
+                          {a.nivel||'—'}
+                        </span>
                       </td>
-                      <td style={{whiteSpace:'nowrap'}}>{a.plan==='mensual'?'Mensual':a.plan==='pack'?'Prepago':'Sueltas'}</td>
+                      <td style={{whiteSpace:'nowrap'}}>{a.plan==='mensual'?'Plan mensual':a.plan==='pack'?'Prepago':'Clases sueltas'}</td>
                       <td style={{textAlign:'center',fontFamily:'var(--font-num)',fontWeight:500}}>{a.clases_semana||2}</td>
                       <td style={{whiteSpace:'nowrap'}}>{a.instructores?`${a.instructores.nombre} ${a.instructores.apellido}`:'—'}</td>
                       <td style={{maxWidth:160}}>
@@ -198,13 +196,13 @@ export default function Alumnos({ esAdmin }) {
           </div>
           <div className="form-row" style={{marginTop:13}}><label className="form-lbl">Teléfono (WhatsApp)</label><input className="form-inp" value={form.telefono} onChange={set('telefono')} placeholder="+54 9 3765 ..."/></div>
           <div className="form-row2">
-            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Plan</label><select className="form-inp" value={form.plan} onChange={set('plan')}><option value="mensual">Plan mensual</option><option value="pack">Pack prepago</option><option value="sueltas">Clases sueltas</option></select></div>
-            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Clases por semana</label><select className="form-inp" value={form.clases_semana} onChange={set('clases_semana')}><option value={1}>1 clase/semana</option><option value={2}>2 clases/semana</option><option value={3}>3 clases/semana</option><option value={4}>4 clases/semana</option></select></div>
+            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Plan</label><select className="form-inp" value={form.plan} onChange={set('plan')}><option value="mensual">Plan mensual</option><option value="pack">Prepago</option><option value="sueltas">Clases sueltas</option></select></div>
+            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Clases por semana</label><select className="form-inp" value={form.clases_semana} onChange={set('clases_semana')}><option value={1}>1</option><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option></select></div>
           </div>
-          <div className="form-row2" style={{marginTop:0}}>
-            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Nivel de Pilates</label><select className="form-inp" value={form.nivel} onChange={set('nivel')}><option value="A">A — Principiante</option><option value="B">B — Intermedio</option><option value="C">C — Avanzado</option></select></div>
+          <div className="form-row2" style={{marginTop:12}}>
+            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Nivel</label><select className="form-inp" value={form.nivel} onChange={set('nivel')}><option value="A">A</option><option value="B">B</option><option value="C">C</option></select></div>
+            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Instructor asignado</label><select className="form-inp" value={form.instructor_id} onChange={set('instructor_id')}><option value="">Sin asignar</option>{instructores.map(i=><option key={i.id} value={i.id}>{i.nombre} {i.apellido}</option>)}</select></div>
           </div>
-          <div className="form-row" style={{marginTop:13}}><label className="form-lbl">Instructor asignado</label><select className="form-inp" value={form.instructor_id} onChange={set('instructor_id')}><option value="">Sin asignar</option>{instructores.map(i=><option key={i.id} value={i.id}>{i.nombre} {i.apellido}</option>)}</select></div>
           <div className="form-row"><label className="form-lbl">Notas / Patologías / Condiciones especiales</label><textarea className="form-inp" value={form.notas} onChange={set('notas')} placeholder="Ej: Hernia lumbar L4-L5. Evitar flexión profunda..."/></div>
         </Modal>
       )}
