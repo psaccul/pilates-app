@@ -10,7 +10,7 @@ import { es } from 'date-fns/locale'
 const COLORS = ['#C0396B','#48A999','#4A6FA5','#9B6BBB']
 const NIVEL_COL = { A:{bg:'#E4F4EE',text:'#2D7A5A'}, B:{bg:'#E6F1FB',text:'#185FA5'}, C:{bg:'#F0EAF8',text:'#6A3A8A'} }
 
-export default function Reportes({ esAdmin }) {
+export default function Reportes() {
   const [tab, setTab]       = useState('cumplimiento')
   const [mes, setMes]       = useState(format(new Date(),'yyyy-MM'))
   const [loading, setLoading] = useState(true)
@@ -21,7 +21,6 @@ export default function Reportes({ esAdmin }) {
   const [resumen, setResumen]               = useState({ clases:0, asistencias:0, promedioDia:0, diaPico:'' })
   const [alumnosReport, setAlumnosReport]   = useState([])
   const [cumplimiento, setCumplimiento]     = useState([])
-
   const [reporteInstructores, setReporteInstructores] = useState([])
 
   useEffect(() => { fetchReporte() }, [mes, tab])
@@ -66,48 +65,7 @@ export default function Reportes({ esAdmin }) {
       setResumen({ clases:(clases||[]).length, asistencias:totalAsist, promedioDia:diasArr.length?Math.round(totalAsist/diasArr.length):0, diaPico:picoObj?picoObj.dia:'—' })
     }
 
-    if (tab === 'instructores') {
-      const inicio2 = format(startOfMonth(mesDate),'yyyy-MM-dd')
-      const fin2    = format(endOfMonth(mesDate),  'yyyy-MM-dd')
-
-      const { data: ins } = await supabase.from('instructores').select('id,nombre,apellido').eq('activo',true).order('apellido')
-      const { data: clases } = await supabase.from('clases')
-        .select('id,nombre,fecha,hora,sala,instructor_id,asistencias(id,estado_asistencia,motivo_cancelacion)')
-        .gte('fecha',inicio2).lte('fecha',fin2)
-
-      const data = (ins||[]).map(inst => {
-        const miClases = (clases||[]).filter(c=>c.instructor_id===inst.id)
-        const total = miClases.length
-
-        // Una clase se considera "cancelada" si TODOS sus alumnos tienen ausencia
-        // O si no tiene alumnos (0 asistencias registradas)
-        let dadas = 0, canceladas = 0
-        const motivosConteo = { cambio_instructor:0, baja_instituto:0, sin_motivo:0, otro:0 }
-
-        miClases.forEach(c => {
-          const asis = c.asistencias||[]
-          if (asis.length === 0) { dadas++; return }
-          const hayPresente = asis.some(a=>a.estado_asistencia==='presente')
-          if (hayPresente) {
-            dadas++
-          } else {
-            canceladas++
-            // Contar motivos de cancelación
-            asis.forEach(a => {
-              if (a.motivo_cancelacion && motivosConteo[a.motivo_cancelacion] !== undefined) {
-                motivosConteo[a.motivo_cancelacion]++
-              } else if (a.motivo_cancelacion) {
-                motivosConteo.otro++
-              }
-            })
-          }
-        })
-
-        return { ...inst, total, dadas, canceladas, motivosConteo }
-      })
-
-      setReporteInstructores(data)
-    }
+    if (tab === 'alumnos') {
       const { data: als } = await supabase.from('alumnos')
         .select('*, instructores(nombre,apellido), pagos(pagado,monto), asistencias(asistio,estado_asistencia,recuperacion)')
         .eq('activo',true).order('apellido')
@@ -115,15 +73,13 @@ export default function Reportes({ esAdmin }) {
     }
 
     if (tab === 'cumplimiento') {
-      // Calcular semanas del mes
       const diasMes   = getDaysInMonth(mesDate)
-      const semansMes = Math.ceil(diasMes / 7)  // ~4 semanas
+      const semansMes = Math.ceil(diasMes / 7)
 
       const { data: als } = await supabase.from('alumnos')
         .select('id,nombre,apellido,nivel,plan,clases_semana,instructores(nombre,apellido)')
         .eq('activo',true).order('apellido')
 
-      // Para cada alumno, contar asistencias reales en el mes
       const alumnosIds = (als||[]).map(a=>a.id)
       const { data: asisData } = await supabase.from('asistencias')
         .select('alumno_id,asistio,estado_asistencia,clases(fecha)')
@@ -140,7 +96,7 @@ export default function Reportes({ esAdmin }) {
 
       const data = (als||[]).map(a => {
         const csem       = a.clases_semana || 2
-        const esperadas  = csem * semansMes        // total esperado en el mes
+        const esperadas  = csem * semansMes
         const realizadas = asistPorAlumno[a.id] || 0
         const faltantes  = Math.max(0, esperadas - realizadas)
         const pct        = esperadas > 0 ? Math.round((realizadas / esperadas) * 100) : 0
@@ -148,6 +104,41 @@ export default function Reportes({ esAdmin }) {
       })
 
       setCumplimiento(data)
+    }
+
+    if (tab === 'instructores') {
+      const { data: ins } = await supabase.from('instructores').select('id,nombre,apellido').eq('activo',true).order('apellido')
+      const { data: clases } = await supabase.from('clases')
+        .select('id,nombre,fecha,hora,sala,instructor_id,asistencias(id,estado_asistencia,motivo_cancelacion)')
+        .gte('fecha',inicio).lte('fecha',fin)
+
+      const data = (ins||[]).map(inst => {
+        const miClases = (clases||[]).filter(c=>c.instructor_id===inst.id)
+        const total = miClases.length
+        let dadas = 0, canceladas = 0
+        const motivosConteo = { cambio_instructor:0, baja_instituto:0, sin_motivo:0, otro:0 }
+
+        miClases.forEach(c => {
+          const asis = c.asistencias||[]
+          if (asis.length === 0) { dadas++; return }
+          const hayPresente = asis.some(a=>a.estado_asistencia==='presente')
+          if (hayPresente) {
+            dadas++
+          } else {
+            canceladas++
+            asis.forEach(a => {
+              if (a.motivo_cancelacion && motivosConteo[a.motivo_cancelacion] !== undefined)
+                motivosConteo[a.motivo_cancelacion]++
+              else if (a.motivo_cancelacion)
+                motivosConteo.otro++
+            })
+          }
+        })
+
+        return { ...inst, total, dadas, canceladas, motivosConteo }
+      })
+
+      setReporteInstructores(data)
     }
 
     setLoading(false)
@@ -181,35 +172,21 @@ export default function Reportes({ esAdmin }) {
 
       {loading ? <div className="loading">Cargando…</div> : (
         <>
-          {/* ===== CUMPLIMIENTO MENSUAL ===== */}
+          {/* ===== CUMPLIMIENTO ===== */}
           {tab === 'cumplimiento' && (
             <>
-              {/* Resumen rápido */}
               {(() => {
                 const completos   = cumplimiento.filter(a=>a.pct>=100).length
                 const incompletos = cumplimiento.filter(a=>a.pct>0&&a.pct<100).length
                 const sinClases   = cumplimiento.filter(a=>a.realizadas===0).length
                 return (
                   <div className="stats" style={{gridTemplateColumns:'repeat(3,1fr)',marginBottom:16}}>
-                    <div className="sc" style={{'--acc':'var(--teal)'}}>
-                      <div className="sc-lbl">Completaron el plan</div>
-                      <div className="sc-val">{completos}</div>
-                      <div className="sc-sub">{completos>0?`${Math.round(completos/cumplimiento.length*100)}% del total`:''}</div>
-                    </div>
-                    <div className="sc" style={{'--acc':'var(--mg)'}}>
-                      <div className="sc-lbl">Incompletos</div>
-                      <div className="sc-val">{incompletos}</div>
-                      <div className="sc-sub">faltan clases</div>
-                    </div>
-                    <div className="sc" style={{'--acc':'#E24B4A'}}>
-                      <div className="sc-lbl">Sin asistencia</div>
-                      <div className="sc-val">{sinClases}</div>
-                      <div className="sc-sub">0 clases en el mes</div>
-                    </div>
+                    <div className="sc" style={{'--acc':'var(--teal)'}}><div className="sc-lbl">Completaron</div><div className="sc-val">{completos}</div></div>
+                    <div className="sc" style={{'--acc':'var(--mg)'}}><div className="sc-lbl">Incompletos</div><div className="sc-val">{incompletos}</div></div>
+                    <div className="sc" style={{'--acc':'#E24B4A'}}><div className="sc-lbl">Sin asistencia</div><div className="sc-val">{sinClases}</div></div>
                   </div>
                 )
               })()}
-
               <div className="panel">
                 <div className="ph">
                   <span className="ph-title">Cumplimiento — {format(parseISO(mes+'-01'),'MMMM yyyy',{locale:es})}</span>
@@ -220,8 +197,7 @@ export default function Reportes({ esAdmin }) {
                     <thead>
                       <tr>
                         <th style={{position:'sticky',left:0,background:'var(--sl-l)',zIndex:2}}>Alumno</th>
-                        <th>Nivel</th>
-                        <th>Instructor</th>
+                        <th>Nivel</th><th>Instructor</th>
                         <th style={{textAlign:'center'}}>Esperadas</th>
                         <th style={{textAlign:'center'}}>Realizadas</th>
                         <th style={{textAlign:'center'}}>Faltantes</th>
@@ -230,48 +206,41 @@ export default function Reportes({ esAdmin }) {
                     </thead>
                     <tbody>
                       {cumplimiento.length===0&&<tr><td colSpan={7} className="empty">Sin datos</td></tr>}
-                      {cumplimiento
-                        .sort((a,b)=>a.pct-b.pct)  // ordenar por menor cumplimiento primero
-                        .map(a => {
-                          const color = a.pct>=100?'#2D7A5A':a.pct>=60?'#7A5010':'#B03030'
-                          const bgBar = a.pct>=100?'#48A999':a.pct>=60?'#D4A020':'#E24B4A'
-                          return (
-                            <tr key={a.id} style={{background:a.realizadas===0?'#FFF5F5':a.pct>=100?'#F6FBF8':'var(--white)'}}>
-                              <td className="col-sticky">
-                                <span style={{fontWeight:500,cursor:'pointer',color:'var(--mg)'}}
-                                  onClick={() => window.dispatchEvent(new CustomEvent('open-ficha-alumno',{detail:a.id}))}>
-                                  {a.nombre} {a.apellido}
-                                </span>
-                              </td>
-                              <td>
-                                {a.nivel && <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:99,...NIVEL_COL[a.nivel]}}>{a.nivel}</span>}
-                              </td>
-                              <td style={{fontSize:11,color:'var(--sl-m)',whiteSpace:'nowrap'}}>{a.instructores?`${a.instructores.nombre} ${a.instructores.apellido}`:'—'}</td>
-                              <td style={{textAlign:'center',fontFamily:'var(--font-num)',fontWeight:500}}>{a.esperadas}</td>
-                              <td style={{textAlign:'center',fontFamily:'var(--font-num)',fontWeight:700,color:color}}>{a.realizadas}</td>
-                              <td style={{textAlign:'center',fontFamily:'var(--font-num)',color:a.faltantes>0?'#B03030':'#2D7A5A',fontWeight:a.faltantes>0?600:400}}>
-                                {a.faltantes>0?`-${a.faltantes}`:'✓'}
-                              </td>
-                              <td>
-                                <div style={{display:'flex',alignItems:'center',gap:8}}>
-                                  <div style={{flex:1,height:6,background:'var(--sl-l)',borderRadius:99,overflow:'hidden',minWidth:60}}>
-                                    <div style={{height:'100%',width:`${Math.min(100,a.pct)}%`,background:bgBar,borderRadius:99,transition:'width 0.3s'}}/>
-                                  </div>
-                                  <span style={{fontSize:11,fontWeight:600,color,fontFamily:'var(--font-num)',minWidth:32,textAlign:'right'}}>{a.pct}%</span>
+                      {cumplimiento.sort((a,b)=>a.pct-b.pct).map(a => {
+                        const color = a.pct>=100?'#2D7A5A':a.pct>=60?'#7A5010':'#B03030'
+                        const bgBar = a.pct>=100?'#48A999':a.pct>=60?'#D4A020':'#E24B4A'
+                        return (
+                          <tr key={a.id} style={{background:a.realizadas===0?'#FFF5F5':a.pct>=100?'#F6FBF8':'var(--white)'}}>
+                            <td className="col-sticky">
+                              <span style={{fontWeight:500,cursor:'pointer',color:'var(--mg)'}} onClick={() => window.dispatchEvent(new CustomEvent('open-ficha-alumno',{detail:a.id}))}>
+                                {a.nombre} {a.apellido}
+                              </span>
+                            </td>
+                            <td style={{textAlign:'center'}}>
+                              <span style={{fontSize:12,fontWeight:700,color:a.nivel==='A'?'#2D7A5A':a.nivel==='B'?'#185FA5':'#6A3A8A'}}>{a.nivel||'—'}</span>
+                            </td>
+                            <td style={{fontSize:11,color:'var(--sl-m)',whiteSpace:'nowrap'}}>{a.instructores?`${a.instructores.nombre} ${a.instructores.apellido}`:'—'}</td>
+                            <td style={{textAlign:'center',fontFamily:'var(--font-num)',fontWeight:500}}>{a.esperadas}</td>
+                            <td style={{textAlign:'center',fontFamily:'var(--font-num)',fontWeight:700,color}}>{a.realizadas}</td>
+                            <td style={{textAlign:'center',fontFamily:'var(--font-num)',color:a.faltantes>0?'#B03030':'#2D7A5A',fontWeight:a.faltantes>0?600:400}}>
+                              {a.faltantes>0?`-${a.faltantes}`:'✓'}
+                            </td>
+                            <td>
+                              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                                <div style={{flex:1,height:6,background:'var(--sl-l)',borderRadius:99,overflow:'hidden',minWidth:60}}>
+                                  <div style={{height:'100%',width:`${Math.min(100,a.pct)}%`,background:bgBar,borderRadius:99}}/>
                                 </div>
-                              </td>
-                            </tr>
-                          )
-                        })
-                      }
+                                <span style={{fontSize:11,fontWeight:600,color,fontFamily:'var(--font-num)',minWidth:32,textAlign:'right'}}>{a.pct}%</span>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
-
-                {/* Nota al pie */}
                 <div style={{padding:'10px 16px',fontSize:11,color:'var(--sl-m)',borderTop:'1px solid var(--border)'}}>
-                  Esperadas = clases/semana × semanas del mes. Los alumnos con menor cumplimiento aparecen primero.
-                  Los marcados en rojo no tuvieron ninguna asistencia este mes.
+                  Esperadas = clases/semana × semanas del mes. Ordenado por menor cumplimiento primero.
                 </div>
               </div>
             </>
@@ -281,58 +250,41 @@ export default function Reportes({ esAdmin }) {
           {tab === 'instructores' && (
             <>
               <div className="stats" style={{gridTemplateColumns:'repeat(3,1fr)',marginBottom:16}}>
-                <div className="sc" style={{'--acc':'var(--teal)'}}>
-                  <div className="sc-lbl">Clases dadas</div>
-                  <div className="sc-val">{reporteInstructores.reduce((s,i)=>s+i.dadas,0)}</div>
-                </div>
-                <div className="sc" style={{'--acc':'#E24B4A'}}>
-                  <div className="sc-lbl">Canceladas</div>
-                  <div className="sc-val">{reporteInstructores.reduce((s,i)=>s+i.canceladas,0)}</div>
-                </div>
-                <div className="sc" style={{'--acc':'var(--blue)'}}>
-                  <div className="sc-lbl">Total programadas</div>
-                  <div className="sc-val">{reporteInstructores.reduce((s,i)=>s+i.total,0)}</div>
-                </div>
+                <div className="sc" style={{'--acc':'var(--teal)'}}><div className="sc-lbl">Clases dadas</div><div className="sc-val">{reporteInstructores.reduce((s,i)=>s+i.dadas,0)}</div></div>
+                <div className="sc" style={{'--acc':'#E24B4A'}}><div className="sc-lbl">Canceladas</div><div className="sc-val">{reporteInstructores.reduce((s,i)=>s+i.canceladas,0)}</div></div>
+                <div className="sc" style={{'--acc':'var(--blue)'}}><div className="sc-lbl">Total programadas</div><div className="sc-val">{reporteInstructores.reduce((s,i)=>s+i.total,0)}</div></div>
               </div>
-
               {reporteInstructores.map(inst => (
                 <div key={inst.id} style={{border:'1px solid var(--border)',borderRadius:12,marginBottom:12,overflow:'hidden'}}>
-                  {/* Header instructor */}
                   <div style={{padding:'12px 16px',background:'var(--sl-l)',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
                     <div style={{fontWeight:500,fontSize:14}}>{inst.nombre} {inst.apellido}</div>
                     <div style={{display:'flex',gap:10}}>
-                      <span style={{fontSize:12,padding:'3px 10px',borderRadius:99,background:'#E4F4EE',color:'#2D7A5A',fontFamily:'var(--font-num)',fontWeight:600}}>✓ {inst.dadas} dadas</span>
-                      {inst.canceladas>0&&<span style={{fontSize:12,padding:'3px 10px',borderRadius:99,background:'#FDECEA',color:'#B03030',fontFamily:'var(--font-num)',fontWeight:600}}>✗ {inst.canceladas} canceladas</span>}
-                      <span style={{fontSize:12,padding:'3px 10px',borderRadius:99,background:'var(--white)',color:'var(--sl-m)',fontFamily:'var(--font-num)'}}>Total: {inst.total}</span>
+                      <span style={{fontSize:12,padding:'3px 10px',borderRadius:99,background:'#E4F4EE',color:'#2D7A5A',fontWeight:600}}>✓ {inst.dadas} dadas</span>
+                      {inst.canceladas>0&&<span style={{fontSize:12,padding:'3px 10px',borderRadius:99,background:'#FDECEA',color:'#B03030',fontWeight:600}}>✗ {inst.canceladas} canceladas</span>}
+                      <span style={{fontSize:12,padding:'3px 10px',borderRadius:99,background:'var(--white)',color:'var(--sl-m)'}}>Total: {inst.total}</span>
                     </div>
                   </div>
-
-                  {/* Detalle motivos si hubo cancelaciones */}
                   {inst.canceladas > 0 && (
                     <div style={{padding:'12px 16px'}}>
                       <div style={{fontSize:11,color:'var(--sl-m)',textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:8}}>Motivos de cancelación</div>
                       <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                         {[
-                          {key:'cambio_instructor', label:'Cambio de instructor', color:'#185FA5', bg:'#E6F1FB'},
-                          {key:'baja_instituto',    label:'Baja del instituto',   color:'#B03030', bg:'#FDECEA'},
-                          {key:'sin_motivo',        label:'Sin motivo',           color:'#7A5010', bg:'#FEF3E2'},
-                          {key:'otro',              label:'Otro',                 color:'#6A3A8A', bg:'#F0EAF8'},
+                          {key:'cambio_instructor',label:'Cambio de instructor',color:'#185FA5',bg:'#E6F1FB'},
+                          {key:'baja_instituto',   label:'Baja del instituto',  color:'#B03030',bg:'#FDECEA'},
+                          {key:'sin_motivo',       label:'Sin motivo',          color:'#7A5010',bg:'#FEF3E2'},
+                          {key:'otro',             label:'Otro',                color:'#6A3A8A',bg:'#F0EAF8'},
                         ].filter(m=>inst.motivosConteo[m.key]>0).map(m=>(
                           <span key={m.key} style={{fontSize:11,padding:'4px 10px',borderRadius:8,background:m.bg,color:m.color,fontWeight:500}}>
-                            {m.label}: <strong style={{fontFamily:'var(--font-num)'}}>{inst.motivosConteo[m.key]}</strong>
+                            {m.label}: <strong>{inst.motivosConteo[m.key]}</strong>
                           </span>
                         ))}
-                        {Object.values(inst.motivosConteo).every(v=>v===0)&&(
-                          <span style={{fontSize:11,color:'var(--sl-m)'}}>Sin motivos registrados</span>
-                        )}
+                        {Object.values(inst.motivosConteo).every(v=>v===0)&&<span style={{fontSize:11,color:'var(--sl-m)'}}>Sin motivos registrados</span>}
                       </div>
                     </div>
                   )}
-
                   {inst.total===0&&<div style={{padding:'12px 16px',fontSize:12,color:'var(--sl-m)'}}>Sin clases programadas este mes.</div>}
                 </div>
               ))}
-
               {reporteInstructores.length===0&&<div className="empty">Sin instructores activos</div>}
             </>
           )}
@@ -355,7 +307,7 @@ export default function Reportes({ esAdmin }) {
                         <BarChart data={asistPorDia} barSize={12}>
                           <XAxis dataKey="dia" tick={{fontSize:10,fill:'var(--sl-m)'}} axisLine={false} tickLine={false}/>
                           <YAxis tick={{fontSize:10,fill:'var(--sl-m)'}} axisLine={false} tickLine={false} width={22} allowDecimals={false}/>
-                          <Tooltip contentStyle={{fontSize:11,borderRadius:8,border:'1px solid var(--border)'}} formatter={v=>[v,'Asistencias']} labelFormatter={l=>`Día ${l}`}/>
+                          <Tooltip contentStyle={{fontSize:11,borderRadius:8}} formatter={v=>[v,'Asistencias']} labelFormatter={l=>`Día ${l}`}/>
                           <Bar dataKey="asistencias" fill="var(--mg)" radius={[4,4,0,0]}/>
                         </BarChart>
                       </ResponsiveContainer>
@@ -405,7 +357,7 @@ export default function Reportes({ esAdmin }) {
                 <span style={{fontSize:11,color:'var(--sl-m)'}}>{alumnosReport.length} alumnos</span>
               </div>
               <div className="tbl-wrap">
-                <table className="tbl" style={{minWidth:640}}>
+                <table className="tbl" style={{minWidth:600}}>
                   <thead>
                     <tr>
                       <th style={{position:'sticky',left:0,background:'var(--sl-l)',zIndex:2}}>Alumno</th>
@@ -426,7 +378,7 @@ export default function Reportes({ esAdmin }) {
                           <td className="col-sticky">
                             <span style={{fontWeight:500,cursor:'pointer',color:'var(--mg)'}} onClick={() => window.dispatchEvent(new CustomEvent('open-ficha-alumno',{detail:a.id}))}>{a.nombre} {a.apellido}</span>
                           </td>
-                          <td style={{whiteSpace:'nowrap'}}>{a.plan==='mensual'?'Mensual':a.plan==='pack'?'Pack':'Sueltas'}</td>
+                          <td style={{whiteSpace:'nowrap'}}>{a.plan==='mensual'?'Plan mensual':a.plan==='pack'?'Prepago':'Clases sueltas'}</td>
                           <td style={{fontSize:11,whiteSpace:'nowrap'}}>{a.instructores?`${a.instructores.nombre} ${a.instructores.apellido}`:'—'}</td>
                           <td style={{textAlign:'center',fontWeight:500,fontFamily:'var(--font-num)'}}>{presentes}</td>
                           <td style={{textAlign:'center'}}>
@@ -443,7 +395,6 @@ export default function Reportes({ esAdmin }) {
           )}
         </>
       )}
-
       <style>{`@media print { .sidebar,.topbar,.tabs,.btn-sec,.btn-pri,.hamburger,.notif-bell{display:none!important} .content{padding:0!important} .panel{break-inside:avoid} .layout{height:auto;overflow:visible} .main{overflow:visible} }`}</style>
     </>
   )
