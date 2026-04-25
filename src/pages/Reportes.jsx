@@ -22,6 +22,7 @@ export default function Reportes() {
   const [alumnosReport, setAlumnosReport]   = useState([])
   const [cumplimiento, setCumplimiento]     = useState([])
   const [reporteInstructores, setReporteInstructores] = useState([])
+  const [facturacion, setFacturacion] = useState({ alumnos:[], precios:{mensual:0,pack:0,sueltas:0}, total:0, porPlan:{} })
 
   useEffect(() => { fetchReporte() }, [mes, tab])
 
@@ -106,7 +107,33 @@ export default function Reportes() {
       setCumplimiento(data)
     }
 
-    if (tab === 'instructores') {
+    if (tab === 'facturacion') {
+      const [{ data: als }, { data: cfg }] = await Promise.all([
+        supabase.from('alumnos').select('id,nombre,apellido,plan,nivel,clases_semana,instructores(nombre,apellido)').eq('activo',true).order('apellido'),
+        supabase.from('configuracion').select('precio_mensual,precio_prepago,precio_sueltas').eq('id',1).maybeSingle(),
+      ])
+
+      const precios = {
+        mensual: Number(cfg?.precio_mensual||0),
+        pack:    Number(cfg?.precio_prepago||0),
+        sueltas: Number(cfg?.precio_sueltas||0),
+      }
+
+      const alumnosConMonto = (als||[]).map(a => ({
+        ...a,
+        monto: precios[a.plan] || 0,
+      }))
+
+      const porPlan = {
+        mensual: alumnosConMonto.filter(a=>a.plan==='mensual'),
+        pack:    alumnosConMonto.filter(a=>a.plan==='pack'),
+        sueltas: alumnosConMonto.filter(a=>a.plan==='sueltas'),
+      }
+
+      const total = alumnosConMonto.reduce((s,a)=>s+a.monto, 0)
+
+      setFacturacion({ alumnos:alumnosConMonto, precios, total, porPlan })
+    }
       const { data: ins } = await supabase.from('instructores').select('id,nombre,apellido').eq('activo',true).order('apellido')
       const { data: clases } = await supabase.from('clases')
         .select('id,nombre,fecha,hora,sala,instructor_id,asistencias(id,estado_asistencia,motivo_cancelacion)')
@@ -157,6 +184,7 @@ export default function Reportes() {
     <>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14,flexWrap:'wrap',gap:10}}>
         <div className="tabs" style={{marginBottom:0}}>
+          <div className={`tab${tab==='facturacion'?' active':''}`} onClick={() => setTab('facturacion')}>Facturación</div>
           <div className={`tab${tab==='cumplimiento'?' active':''}`} onClick={() => setTab('cumplimiento')}>Cumplimiento</div>
           <div className={`tab${tab==='instructores'?' active':''}`} onClick={() => setTab('instructores')}>Por instructor</div>
           <div className={`tab${tab==='asistencia'?' active':''}`} onClick={() => setTab('asistencia')}>Asistencia</div>
@@ -172,6 +200,96 @@ export default function Reportes() {
 
       {loading ? <div className="loading">Cargando…</div> : (
         <>
+          {/* ===== FACTURACIÓN ===== */}
+          {tab === 'facturacion' && (
+            <>
+              {/* Aviso si no hay precios configurados */}
+              {facturacion.precios.mensual===0 && facturacion.precios.pack===0 && facturacion.precios.sueltas===0 && (
+                <div style={{padding:'12px 16px',background:'#FEF3E2',borderRadius:10,border:'1px solid #F0C060',fontSize:12,color:'#7A5010',marginBottom:16}}>
+                  ⚠ Los precios por plan están en $0. Configurálos en <strong>Finanzas → Configuración</strong> para ver la facturación correcta.
+                </div>
+              )}
+
+              {/* Stats resumen */}
+              <div className="stats" style={{gridTemplateColumns:'repeat(4,1fr)',marginBottom:16}}>
+                <div className="sc" style={{'--acc':'var(--teal)'}}>
+                  <div className="sc-lbl">Facturación estimada</div>
+                  <div className="sc-val" style={{fontSize:20}}>${Math.round(facturacion.total).toLocaleString('es-AR')}</div>
+                  <div className="sc-sub">{format(parseISO(mes+'-01'),'MMMM yyyy',{locale:es})}</div>
+                </div>
+                <div className="sc" style={{'--acc':'var(--mg)'}}>
+                  <div className="sc-lbl">Plan mensual</div>
+                  <div className="sc-val" style={{fontSize:20}}>${Math.round((facturacion.porPlan.mensual||[]).reduce((s,a)=>s+a.monto,0)).toLocaleString('es-AR')}</div>
+                  <div className="sc-sub">{(facturacion.porPlan.mensual||[]).length} alumnos · ${facturacion.precios.mensual.toLocaleString('es-AR')} c/u</div>
+                </div>
+                <div className="sc" style={{'--acc':'var(--blue)'}}>
+                  <div className="sc-lbl">Prepago</div>
+                  <div className="sc-val" style={{fontSize:20}}>${Math.round((facturacion.porPlan.pack||[]).reduce((s,a)=>s+a.monto,0)).toLocaleString('es-AR')}</div>
+                  <div className="sc-sub">{(facturacion.porPlan.pack||[]).length} alumnos · ${facturacion.precios.pack.toLocaleString('es-AR')} c/u</div>
+                </div>
+                <div className="sc" style={{'--acc':'var(--purple)'}}>
+                  <div className="sc-lbl">Clases sueltas</div>
+                  <div className="sc-val" style={{fontSize:20}}>${Math.round((facturacion.porPlan.sueltas||[]).reduce((s,a)=>s+a.monto,0)).toLocaleString('es-AR')}</div>
+                  <div className="sc-sub">{(facturacion.porPlan.sueltas||[]).length} alumnos · ${facturacion.precios.sueltas.toLocaleString('es-AR')} c/u</div>
+                </div>
+              </div>
+
+              {/* Tabla detallada */}
+              <div className="panel">
+                <div className="ph">
+                  <span className="ph-title">Detalle por alumno</span>
+                  <span style={{fontSize:11,color:'var(--sl-m)'}}>{facturacion.alumnos.length} alumnos activos</span>
+                </div>
+                <div className="tbl-wrap">
+                  <table className="tbl" style={{minWidth:560}}>
+                    <thead>
+                      <tr>
+                        <th style={{position:'sticky',left:0,background:'var(--sl-l)',zIndex:2}}>Alumno</th>
+                        <th>Nivel</th>
+                        <th>Plan</th>
+                        <th>Clases/sem</th>
+                        <th>Instructor</th>
+                        <th style={{textAlign:'right'}}>Monto</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {facturacion.alumnos.length===0&&<tr><td colSpan={6} className="empty">Sin alumnos activos</td></tr>}
+                      {facturacion.alumnos.map(a=>(
+                        <tr key={a.id}>
+                          <td className="col-sticky">
+                            <span style={{fontWeight:500,cursor:'pointer',color:'var(--mg)'}} onClick={() => window.dispatchEvent(new CustomEvent('open-ficha-alumno',{detail:a.id}))}>
+                              {a.nombre} {a.apellido}
+                            </span>
+                          </td>
+                          <td style={{textAlign:'center'}}>
+                            <span style={{fontSize:12,fontWeight:700,color:a.nivel==='A'?'#2D7A5A':a.nivel==='B'?'#185FA5':'#6A3A8A'}}>{a.nivel||'—'}</span>
+                          </td>
+                          <td style={{whiteSpace:'nowrap'}}>{a.plan==='mensual'?'Plan mensual':a.plan==='pack'?'Prepago':'Clases sueltas'}</td>
+                          <td style={{textAlign:'center',fontFamily:'var(--font-num)'}}>{a.clases_semana||2}</td>
+                          <td style={{fontSize:11,color:'var(--sl-m)',whiteSpace:'nowrap'}}>{a.instructores?`${a.instructores.nombre} ${a.instructores.apellido}`:'—'}</td>
+                          <td style={{textAlign:'right',fontFamily:'var(--font-num)',fontWeight:600,color:'var(--dark)'}}>
+                            ${a.monto.toLocaleString('es-AR')}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{background:'var(--sl-l)'}}>
+                        <td colSpan={5} style={{padding:'10px 14px',fontWeight:600}}>Total estimado del mes</td>
+                        <td style={{textAlign:'right',padding:'10px 14px',fontFamily:'var(--font-num)',fontWeight:700,fontSize:15,color:'var(--mg)'}}>
+                          ${Math.round(facturacion.total).toLocaleString('es-AR')}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+                <div style={{padding:'10px 16px',fontSize:11,color:'var(--sl-m)',borderTop:'1px solid var(--border)'}}>
+                  Facturación proyectada basada en alumnos activos y precios por plan. Se actualiza automáticamente al agregar o dar de baja alumnos.
+                </div>
+              </div>
+            </>
+          )}
+
           {/* ===== CUMPLIMIENTO ===== */}
           {tab === 'cumplimiento' && (
             <>
