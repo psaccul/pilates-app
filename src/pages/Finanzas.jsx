@@ -23,13 +23,20 @@ export default function Finanzas() {
   const [saving, setSaving]             = useState(false)
   const [liquidandoId, setLiquidandoId] = useState(null)
 
-  const [config, setConfig]             = useState({ cobro_dia_inicio:1, cobro_dia_fin:10, nombre_estudio:'Studio Pilates Reformer' })
+  const [config, setConfig]             = useState({
+    cobro_dia_inicio:1, cobro_dia_fin:10, nombre_estudio:'Studio Pilates Reformer',
+    precio_mensual:0, precio_prepago:0, precio_sueltas:0
+  })
   const [savingConfig, setSavingConfig] = useState(false)
+  const [configOk, setConfigOk]         = useState(false)
 
   const [packs, setPacks]               = useState([])
   const [modalPack, setModalPack]       = useState(false)
   const [alumnos, setAlumnos]           = useState([])
-  const [packForm, setPackForm]         = useState({ alumno_id:'', nombre:'', clases_total:10, precio:'', fecha_inicio:'', fecha_vencimiento:'', alerta_clases_restantes:2 })
+  const [packForm, setPackForm]         = useState({
+    alumno_id:'', nombre:'', clases_total:10, precio:'',
+    fecha_inicio:'', fecha_vencimiento:'', alerta_clases_restantes:2
+  })
 
   useEffect(() => { fetchAll() }, [mes])
 
@@ -56,7 +63,6 @@ export default function Finanzas() {
       supabase.from('alumnos').select('id,nombre,apellido').eq('activo',true).order('apellido'),
     ])
 
-    // Ingresos por día
     const porDia = {}
     ;(pagosData||[]).forEach(p => {
       if (!p.fecha_pago) return
@@ -65,7 +71,8 @@ export default function Finanzas() {
       porDia[p.fecha_pago][m] = (porDia[p.fecha_pago][m]||0) + Number(p.monto||0)
       porDia[p.fecha_pago].total += Number(p.monto||0)
     })
-    const diasArr = Object.values(porDia).sort((a,b)=>a.fecha.localeCompare(b.fecha)).map(d=>({...d, label:format(new Date(d.fecha+'T00:00:00'),'d/M')}))
+    const diasArr = Object.values(porDia).sort((a,b)=>a.fecha.localeCompare(b.fecha))
+      .map(d=>({...d, label:format(new Date(d.fecha+'T00:00:00'),'d/M')}))
     setIngresosDia(diasArr)
 
     const totEf  = (pagosData||[]).filter(p=>p.medio==='efectivo').reduce((s,p)=>s+Number(p.monto||0),0)
@@ -78,7 +85,14 @@ export default function Finanzas() {
     ;(tarifasData||[]).forEach(t => { tarMap[t.instructor_id] = t })
     setTarifas(tarMap)
     setLiquidaciones(liqData||[])
-    if (configData) setConfig(configData)
+    if (configData) setConfig({
+      cobro_dia_inicio: configData.cobro_dia_inicio || 1,
+      cobro_dia_fin:    configData.cobro_dia_fin    || 10,
+      nombre_estudio:   configData.nombre_estudio   || 'Studio Pilates Reformer',
+      precio_mensual:   configData.precio_mensual   || 0,
+      precio_prepago:   configData.precio_prepago   || 0,
+      precio_sueltas:   configData.precio_sueltas   || 0,
+    })
     setPacks(packsData||[])
     setAlumnos(alumnosData||[])
     setLoading(false)
@@ -100,48 +114,31 @@ export default function Finanzas() {
 
   async function generarLiquidacion(instructor) {
     const tarifa = tarifas[instructor.id]
-    if (!tarifa) {
-      alert('Primero configurá la tarifa del instructor usando el botón "Tarifa".')
-      return
-    }
+    if (!tarifa) { alert('Primero configurá la tarifa del instructor usando el botón "Tarifa".'); return }
     setLiquidandoId(instructor.id)
     const inicio = format(startOfMonth(parseISO(mes+'-01')),'yyyy-MM-dd')
     const fin    = format(endOfMonth(parseISO(mes+'-01')),  'yyyy-MM-dd')
 
-    // Contar clases del instructor en el mes
-    const { data: clasesIns, error: errClases } = await supabase.from('clases')
+    const { data: clasesIns } = await supabase.from('clases')
       .select('id,tipo').eq('instructor_id',instructor.id).gte('fecha',inicio).lte('fecha',fin)
-
-    if (errClases) { alert('Error al obtener clases: '+errClases.message); setLiquidandoId(null); return }
 
     const grupales     = (clasesIns||[]).filter(c=>c.tipo==='grupal').length
     const individuales = (clasesIns||[]).filter(c=>c.tipo==='individual').length
-
-    // Calcular ingreso estimado de este mes
     const bruto = resumenMes.total
     const pct   = tarifa.porcentaje_grupal || 40
     const neto  = Math.round(bruto * (pct/100))
 
-    // Eliminar liquidación existente del mismo instructor+periodo si existe
-    await supabase.from('liquidaciones')
-      .delete()
-      .eq('instructor_id', instructor.id)
-      .eq('periodo_inicio', inicio)
+    await supabase.from('liquidaciones').delete()
+      .eq('instructor_id', instructor.id).eq('periodo_inicio', inicio)
 
-    // Insertar nueva liquidación
-    const { error: errLiq } = await supabase.from('liquidaciones').insert({
+    await supabase.from('liquidaciones').insert({
       instructor_id: instructor.id,
-      periodo_inicio: inicio,
-      periodo_fin: fin,
-      clases_grupales: grupales,
-      clases_individuales: individuales,
-      monto_bruto: bruto,
-      porcentaje: pct,
-      monto_neto: neto,
+      periodo_inicio: inicio, periodo_fin: fin,
+      clases_grupales: grupales, clases_individuales: individuales,
+      monto_bruto: bruto, porcentaje: pct, monto_neto: neto,
       pagado: false,
     })
 
-    if (errLiq) { alert('Error al liquidar: '+errLiq.message) }
     setLiquidandoId(null)
     fetchAll()
   }
@@ -153,13 +150,18 @@ export default function Finanzas() {
 
   async function guardarConfig() {
     setSavingConfig(true)
+    setConfigOk(false)
     await supabase.from('configuracion').update({
       cobro_dia_inicio: Number(config.cobro_dia_inicio),
-      cobro_dia_fin: Number(config.cobro_dia_fin),
-      nombre_estudio: config.nombre_estudio,
+      cobro_dia_fin:    Number(config.cobro_dia_fin),
+      nombre_estudio:   config.nombre_estudio,
+      precio_mensual:   Number(config.precio_mensual||0),
+      precio_prepago:   Number(config.precio_prepago||0),
+      precio_sueltas:   Number(config.precio_sueltas||0),
     }).eq('id',1)
     setSavingConfig(false)
-    alert('Configuración guardada')
+    setConfigOk(true)
+    setTimeout(() => setConfigOk(false), 3000)
   }
 
   async function guardarPack() {
@@ -180,7 +182,9 @@ export default function Finanzas() {
     fetchAll()
   }
 
-  const meses = Array.from({length:12},(_,i)=>{ const d=new Date(); d.setMonth(d.getMonth()-i); return format(d,'yyyy-MM') })
+  const meses = Array.from({length:12},(_,i)=>{
+    const d=new Date(); d.setMonth(d.getMonth()-i); return format(d,'yyyy-MM')
+  })
 
   if (loading) return <div className="loading">Cargando…</div>
 
@@ -205,19 +209,17 @@ export default function Finanzas() {
               {meses.map(m=><option key={m} value={m}>{format(parseISO(m+'-01'),'MMMM yyyy',{locale:es})}</option>)}
             </select>
           </div>
-
           <div className="stats" style={{gridTemplateColumns:'repeat(2,1fr)',marginBottom:16}}>
             <div className="sc" style={{'--acc':'var(--teal)'}}><div className="sc-lbl">Total del mes</div><div className="sc-val" style={{fontSize:22}}>${Math.round(resumenMes.total).toLocaleString('es-AR')}</div></div>
             <div className="sc" style={{'--acc':'var(--blue)'}}><div className="sc-lbl">Efectivo</div><div className="sc-val" style={{fontSize:22}}>${Math.round(resumenMes.efectivo).toLocaleString('es-AR')}</div></div>
             <div className="sc" style={{'--acc':'var(--teal)'}}><div className="sc-lbl">Mercado Pago</div><div className="sc-val" style={{fontSize:22}}>${Math.round(resumenMes.mp).toLocaleString('es-AR')}</div></div>
             <div className="sc" style={{'--acc':'var(--purple)'}}><div className="sc-lbl">Transferencia</div><div className="sc-val" style={{fontSize:22}}>${Math.round(resumenMes.transf).toLocaleString('es-AR')}</div></div>
           </div>
-
           <div className="grid2">
             <div className="panel">
               <div className="ph"><span className="ph-title">Ingresos por día</span></div>
               <div style={{padding:'14px 8px 8px'}}>
-                {ingresosDia.length===0 ? <div className="empty">Sin ingresos este mes</div> : (
+                {ingresosDia.length===0?<div className="empty">Sin ingresos este mes</div>:(
                   <ResponsiveContainer width="100%" height={160}>
                     <BarChart data={ingresosDia} barSize={10}>
                       <XAxis dataKey="label" tick={{fontSize:9,fill:'var(--sl-m)'}} axisLine={false} tickLine={false}/>
@@ -234,7 +236,7 @@ export default function Finanzas() {
             <div className="panel">
               <div className="ph"><span className="ph-title">Por medio de pago</span></div>
               <div style={{padding:'14px 8px 8px'}}>
-                {resumenMes.total===0 ? <div className="empty">Sin datos</div> : (
+                {resumenMes.total===0?<div className="empty">Sin datos</div>:(
                   <ResponsiveContainer width="100%" height={160}>
                     <PieChart>
                       <Pie data={[{name:'Efectivo',value:resumenMes.efectivo},{name:'Mercado Pago',value:resumenMes.mp},{name:'Transferencia',value:resumenMes.transf}].filter(d=>d.value>0)}
@@ -249,8 +251,6 @@ export default function Finanzas() {
               </div>
             </div>
           </div>
-
-          {/* Tabla detalle */}
           <div className="panel">
             <div className="ph"><span className="ph-title">Detalle diario</span></div>
             <div className="finanzas-scroll">
@@ -292,8 +292,6 @@ export default function Finanzas() {
               {meses.map(m=><option key={m} value={m}>{format(parseISO(m+'-01'),'MMMM yyyy',{locale:es})}</option>)}
             </select>
           </div>
-
-          {/* Cards instructores — más cómodas en mobile que tabla */}
           {instructores.map(inst => {
             const tar = tarifas[inst.id]
             const liq = liquidaciones.find(l=>l.instructor_id===inst.id)
@@ -304,7 +302,7 @@ export default function Finanzas() {
                   <div>
                     <div style={{fontSize:14,fontWeight:500}}>{inst.nombre} {inst.apellido}</div>
                     <div style={{fontSize:11,color:'var(--sl-m)',marginTop:2}}>
-                      {tar ? `${tar.porcentaje_grupal}% grupales · ${tar.porcentaje_individual}% individuales` : <span style={{color:'#B03030'}}>Sin tarifa configurada</span>}
+                      {tar?`${tar.porcentaje_grupal}% grupales · ${tar.porcentaje_individual}% individuales`:<span style={{color:'#B03030'}}>Sin tarifa configurada</span>}
                     </div>
                   </div>
                   <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
@@ -312,23 +310,15 @@ export default function Finanzas() {
                       onClick={() => { setModalTarifa(inst); const t=tarifas[inst.id]; setTarForm({porcentaje_grupal:t?.porcentaje_grupal||40,porcentaje_individual:t?.porcentaje_individual||50,tarifa_hora:t?.tarifa_hora||0}) }}>
                       Tarifa
                     </button>
-                    {!liq?.pagado && (
-                      <button className="btn-pri" style={{fontSize:11,padding:'4px 10px'}}
-                        onClick={() => generarLiquidacion(inst)} disabled={esLiquidando}>
-                        {esLiquidando?'Calculando…':'Liquidar'}
-                      </button>
-                    )}
-                    {liq && !liq.pagado && (
-                      <button className="btn-sec" style={{fontSize:11,padding:'4px 10px',color:'#2D7A5A',borderColor:'#6DC49A'}}
-                        onClick={() => marcarLiqPagada(liq.id)}>Marcar pagado</button>
-                    )}
+                    {!liq?.pagado&&<button className="btn-pri" style={{fontSize:11,padding:'4px 10px'}} onClick={() => generarLiquidacion(inst)} disabled={esLiquidando}>{esLiquidando?'Calculando…':'Liquidar'}</button>}
+                    {liq&&!liq.pagado&&<button className="btn-sec" style={{fontSize:11,padding:'4px 10px',color:'#2D7A5A',borderColor:'#6DC49A'}} onClick={() => marcarLiqPagada(liq.id)}>Marcar pagado</button>}
                   </div>
                 </div>
-                {liq && (
+                {liq&&(
                   <div style={{marginTop:10,padding:'10px 12px',background:liq.pagado?'#E4F4EE':'#FEF3E2',borderRadius:8}}>
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:4}}>
                       <div>
-                        <div style={{fontSize:12,color:'var(--sl-m)'}}>{liq.clases_grupales} cls. grupales · {liq.clases_individuales} cls. individuales · {liq.porcentaje}% del ingreso</div>
+                        <div style={{fontSize:12,color:'var(--sl-m)'}}>{liq.clases_grupales} cls. grupales · {liq.clases_individuales} cls. individuales · {liq.porcentaje}%</div>
                         <div style={{fontSize:11,color:'var(--sl-m)'}}>Ingreso bruto del mes: ${Math.round(liq.monto_bruto).toLocaleString('es-AR')}</div>
                       </div>
                       <div style={{textAlign:'right'}}>
@@ -365,14 +355,7 @@ export default function Finanzas() {
                         <td style={{cursor:'pointer',color:'var(--mg)',fontWeight:500,whiteSpace:'nowrap'}} onClick={() => window.dispatchEvent(new CustomEvent('open-ficha-alumno',{detail:pk.alumno_id}))}>{pk.alumnos?.nombre} {pk.alumnos?.apellido}</td>
                         <td style={{whiteSpace:'nowrap'}}>{pk.nombre}</td>
                         <td style={{fontFamily:'var(--font-num)',textAlign:'center'}}>{pk.clases_total}</td>
-                        <td>
-                          <div style={{display:'flex',alignItems:'center',gap:6}}>
-                            <span style={{fontFamily:'var(--font-num)'}}>{pk.clases_usadas}</span>
-                            <div style={{width:36,height:3,background:'var(--sl-l)',borderRadius:99,overflow:'hidden'}}>
-                              <div style={{height:'100%',width:`${pct}%`,background:rest<=2?'#E24B4A':'#48A999',borderRadius:99}}/>
-                            </div>
-                          </div>
-                        </td>
+                        <td><div style={{display:'flex',alignItems:'center',gap:6}}><span style={{fontFamily:'var(--font-num)'}}>{pk.clases_usadas}</span><div style={{width:36,height:3,background:'var(--sl-l)',borderRadius:99,overflow:'hidden'}}><div style={{height:'100%',width:`${pct}%`,background:rest<=2?'#E24B4A':'#48A999',borderRadius:99}}/></div></div></td>
                         <td><span style={{fontWeight:500,fontFamily:'var(--font-num)',color:rest<=2?'#B03030':rest<=4?'#7A5010':'#2D7A5A'}}>{rest}</span></td>
                         <td style={{fontSize:11,color:'var(--sl-m)',whiteSpace:'nowrap'}}>{pk.fecha_vencimiento||'—'}</td>
                         <td><span className={`est ${pk.activo&&rest>0?'e-ok':rest<=0?'e-ve':'e-pe'}`}>{!pk.activo?'Inactivo':rest<=0?'Agotado':rest<=2?'Por vencer':'Activo'}</span></td>
@@ -391,13 +374,42 @@ export default function Finanzas() {
         <div className="panel" style={{maxWidth:480}}>
           <div className="ph"><span className="ph-title">Configuración del estudio</span></div>
           <div style={{padding:'18px 20px'}}>
-            <div className="form-row"><label className="form-lbl">Nombre del estudio</label><input className="form-inp" value={config.nombre_estudio||''} onChange={e=>setConfig(c=>({...c,nombre_estudio:e.target.value}))}/></div>
+            <div className="form-row">
+              <label className="form-lbl">Nombre del estudio</label>
+              <input className="form-inp" value={config.nombre_estudio||''} onChange={e=>setConfig(c=>({...c,nombre_estudio:e.target.value}))}/>
+            </div>
+
             <div style={{fontSize:12,color:'var(--sl-m)',marginBottom:8,fontWeight:500}}>Período de cobro mensual</div>
             <div className="form-row2">
-              <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Desde el día</label><input className="form-inp" type="number" min={1} max={28} value={config.cobro_dia_inicio||1} onChange={e=>setConfig(c=>({...c,cobro_dia_inicio:e.target.value}))}/></div>
-              <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Hasta el día</label><input className="form-inp" type="number" min={1} max={31} value={config.cobro_dia_fin||10} onChange={e=>setConfig(c=>({...c,cobro_dia_fin:e.target.value}))}/></div>
+              <div className="form-row" style={{marginBottom:0}}>
+                <label className="form-lbl">Desde el día</label>
+                <input className="form-inp" type="number" min={1} max={28} value={config.cobro_dia_inicio||1} onChange={e=>setConfig(c=>({...c,cobro_dia_inicio:e.target.value}))}/>
+              </div>
+              <div className="form-row" style={{marginBottom:0}}>
+                <label className="form-lbl">Hasta el día</label>
+                <input className="form-inp" type="number" min={1} max={31} value={config.cobro_dia_fin||10} onChange={e=>setConfig(c=>({...c,cobro_dia_fin:e.target.value}))}/>
+              </div>
             </div>
             <div style={{fontSize:11,color:'var(--sl-m)',marginTop:6,marginBottom:16}}>El dashboard mostrará alerta azul durante este período cada mes.</div>
+
+            <div style={{fontSize:12,color:'var(--sl-m)',marginBottom:8,fontWeight:500}}>Precios por plan</div>
+            <div className="form-row2">
+              <div className="form-row" style={{marginBottom:0}}>
+                <label className="form-lbl">Plan mensual</label>
+                <input className="form-inp" type="number" value={config.precio_mensual||0} onChange={e=>setConfig(c=>({...c,precio_mensual:e.target.value}))} placeholder="0"/>
+              </div>
+              <div className="form-row" style={{marginBottom:0}}>
+                <label className="form-lbl">Prepago</label>
+                <input className="form-inp" type="number" value={config.precio_prepago||0} onChange={e=>setConfig(c=>({...c,precio_prepago:e.target.value}))} placeholder="0"/>
+              </div>
+            </div>
+            <div className="form-row" style={{marginTop:12}}>
+              <label className="form-lbl">Clases sueltas</label>
+              <input className="form-inp" type="number" value={config.precio_sueltas||0} onChange={e=>setConfig(c=>({...c,precio_sueltas:e.target.value}))} placeholder="0"/>
+            </div>
+            <div style={{fontSize:11,color:'var(--sl-m)',marginBottom:16}}>Estos precios se usan en el reporte de Facturación proyectada.</div>
+
+            {configOk && <div style={{fontSize:12,color:'#2D7A5A',background:'#E4F4EE',padding:'8px 12px',borderRadius:8,marginBottom:12}}>✓ Configuración guardada</div>}
             <button className="btn-pri" onClick={guardarConfig} disabled={savingConfig}>{savingConfig?'Guardando…':'Guardar configuración'}</button>
           </div>
         </div>
@@ -407,7 +419,7 @@ export default function Finanzas() {
       {modalTarifa&&(
         <Modal title={`Tarifa — ${modalTarifa.nombre} ${modalTarifa.apellido}`} onClose={() => setModalTarifa(null)}
           footer={<><button className="btn-sec" onClick={() => setModalTarifa(null)}>Cancelar</button><button className="btn-pri" onClick={guardarTarifa} disabled={saving}>{saving?'Guardando…':'Guardar'}</button></>}>
-          <div style={{fontSize:12,color:'var(--sl-m)',marginBottom:14,padding:'8px 12px',background:'var(--sl-l)',borderRadius:8}}>El porcentaje se calcula sobre el total de ingresos del mes. Por ej: si el estudio cobró $100.000 y el porcentaje es 40%, el instructor cobra $40.000.</div>
+          <div style={{fontSize:12,color:'var(--sl-m)',marginBottom:14,padding:'8px 12px',background:'var(--sl-l)',borderRadius:8}}>El porcentaje se calcula sobre el total de ingresos del mes.</div>
           <div className="form-row2">
             <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">% Clases grupales</label><input className="form-inp" type="number" min={0} max={100} value={tarForm.porcentaje_grupal} onChange={e=>setTarForm(f=>({...f,porcentaje_grupal:e.target.value}))}/></div>
             <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">% Clases individuales</label><input className="form-inp" type="number" min={0} max={100} value={tarForm.porcentaje_individual} onChange={e=>setTarForm(f=>({...f,porcentaje_individual:e.target.value}))}/></div>
