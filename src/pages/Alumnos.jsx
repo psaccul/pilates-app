@@ -2,14 +2,11 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import Modal from '../components/Modal'
 import Avatar from '../components/Avatar'
-import { format } from 'date-fns'
+import { format, addDays, addWeeks, startOfWeek } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { addDays, addWeeks, startOfWeek } from 'date-fns'
 
 const DIAS = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']
-const emptyForm = { nombre:'', apellido:'', telefono:'', plan:'mensual',  instructor_id:'', notas:'', nivel:'A', clases_semana:2 }
-
-const NIVELES = { A:'Principiante (A)', B:'Intermedio (B)', C:'Avanzado (C)' }
+const emptyForm = { nombre:'', apellido:'', telefono:'', plan:'mensual', instructor_id:'', notas:'', nivel:'A', clases_semana:2, fecha_nacimiento:'' }
 const emptyHorario = { dia_semana:'1', hora:'08:00', instructor_id:'', sala:'Sala A', nombre_clase:'' }
 
 export default function Alumnos({ esAdmin }) {
@@ -51,14 +48,25 @@ export default function Alumnos({ esAdmin }) {
   }
 
   function openModal(alumno = null) {
-    setForm(alumno ? { id:alumno.id, nombre:alumno.nombre, apellido:alumno.apellido, telefono:alumno.telefono||'', plan:alumno.plan,  instructor_id:alumno.instructor_id||'', notas:alumno.notas||'', nivel:alumno.nivel||'A', clases_semana:alumno.clases_semana||2 } : emptyForm)
+    setForm(alumno ? {
+      id:alumno.id, nombre:alumno.nombre, apellido:alumno.apellido,
+      telefono:alumno.telefono||'', plan:alumno.plan,
+      instructor_id:alumno.instructor_id||'', notas:alumno.notas||'',
+      nivel:alumno.nivel||'A', clases_semana:alumno.clases_semana||2,
+      fecha_nacimiento:alumno.fecha_nacimiento||''
+    } : emptyForm)
     setModal(true)
   }
 
   async function handleSave() {
     if (!form.nombre || !form.apellido) return
     setSaving(true)
-    const payload = { nombre:form.nombre, apellido:form.apellido, telefono:form.telefono, plan:form.plan, instructor_id:form.instructor_id||null, notas:form.notas, nivel:form.nivel||'A', clases_semana:Number(form.clases_semana)||2, activo:true }
+    const payload = {
+      nombre:form.nombre, apellido:form.apellido, telefono:form.telefono,
+      plan:form.plan, instructor_id:form.instructor_id||null, notas:form.notas,
+      nivel:form.nivel||'A', clases_semana:Number(form.clases_semana)||2,
+      fecha_nacimiento:form.fecha_nacimiento||null, activo:true
+    }
     if (form.id) await supabase.from('alumnos').update(payload).eq('id',form.id)
     else await supabase.from('alumnos').insert(payload)
     setSaving(false); setModal(false); fetchData()
@@ -124,12 +132,62 @@ export default function Alumnos({ esAdmin }) {
     return 'ok'
   }
 
+  function cumpleHoy(alumno) {
+    if (!alumno.fecha_nacimiento) return false
+    const hoy = new Date()
+    const fn  = new Date(alumno.fecha_nacimiento+'T00:00:00')
+    return fn.getDate()===hoy.getDate() && fn.getMonth()===hoy.getMonth()
+  }
+
+  function cumpleEstaSemana(alumno) {
+    if (!alumno.fecha_nacimiento) return false
+    const hoy = new Date()
+    const fn  = new Date(alumno.fecha_nacimiento+'T00:00:00')
+    for (let i=1; i<=7; i++) {
+      const d = addDays(hoy, i)
+      if (fn.getDate()===d.getDate() && fn.getMonth()===d.getMonth()) return true
+    }
+    return false
+  }
+
+  function edadLabel(alumno) {
+    if (!alumno.fecha_nacimiento) return null
+    const fn  = new Date(alumno.fecha_nacimiento+'T00:00:00')
+    const hoy = new Date()
+    let edad = hoy.getFullYear() - fn.getFullYear()
+    const m = hoy.getMonth() - fn.getMonth()
+    if (m < 0 || (m===0 && hoy.getDate() < fn.getDate())) edad--
+    return edad
+  }
+
   const filtered = alumnos.filter(a=>`${a.nombre} ${a.apellido}`.toLowerCase().includes(search.toLowerCase()))
+
+  // Cumpleaños hoy o esta semana para el aviso
+  const cumpleHoyList   = alumnos.filter(a=>cumpleHoy(a))
+  const cumpleSemanaList = alumnos.filter(a=>!cumpleHoy(a)&&cumpleEstaSemana(a))
+
   const set  = k => e => setForm(f=>({...f,[k]:e.target.value}))
   const setH = k => e => setHorarioForm(f=>({...f,[k]:e.target.value}))
 
   return (
     <>
+      {/* Avisos cumpleaños */}
+      {cumpleHoyList.map(a=>(
+        <div key={a.id} style={{padding:'10px 16px',background:'#FEF3E2',border:'1px solid #F0C060',borderRadius:10,fontSize:12,color:'#7A5010',marginBottom:8,display:'flex',alignItems:'center',gap:10}}>
+          <span style={{fontSize:18}}>🎂</span>
+          <span>Hoy es el cumpleaños de <strong>{a.nombre} {a.apellido}</strong>{edadLabel(a)!==null?` — cumple ${edadLabel(a)} años`:''}</span>
+        </div>
+      ))}
+      {cumpleSemanaList.map(a=>{
+        const fn=new Date(a.fecha_nacimiento+'T00:00:00')
+        return(
+          <div key={a.id} style={{padding:'10px 16px',background:'#E6F1FB',border:'1px solid #A8C8F0',borderRadius:10,fontSize:12,color:'#185FA5',marginBottom:8,display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontSize:18}}>🎁</span>
+            <span><strong>{a.nombre} {a.apellido}</strong> cumple años el <strong>{format(fn,"d 'de' MMMM",{locale:es})}</strong></span>
+          </div>
+        )
+      })}
+
       <div style={{marginBottom:12}}>
         <input className="form-inp" style={{maxWidth:280}} placeholder="Buscar alumno…" value={search} onChange={e=>setSearch(e.target.value)}/>
       </div>
@@ -146,35 +204,39 @@ export default function Alumnos({ esAdmin }) {
                 </tr>
               </thead>
               <tbody>
-                {filtered.length===0 && <tr><td colSpan={7} className="empty">No se encontraron alumnos</td></tr>}
+                {filtered.length===0&&<tr><td colSpan={8} className="empty">No se encontraron alumnos</td></tr>}
                 {filtered.map(a => {
                   const ep = estadoPago(a)
+                  const hoyC = cumpleHoy(a)
+                  const semC = !hoyC && cumpleEstaSemana(a)
                   return (
                     <tr key={a.id}>
                       <td className="col-sticky">
-                        <div style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}} onClick={() => window.dispatchEvent(new CustomEvent('open-ficha-alumno',{detail:a.id}))}>
+                        <div style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}} onClick={()=>window.dispatchEvent(new CustomEvent('open-ficha-alumno',{detail:a.id}))}>
                           <Avatar nombre={a.nombre} apellido={a.apellido} size={24} fontSize={9}/>
-                          <span style={{fontWeight:500,color:'var(--mg)',whiteSpace:'normal',wordBreak:'break-word',minWidth:100,maxWidth:160,lineHeight:1.3}}>{a.nombre} {a.apellido}</span>
+                          <div>
+                            <span style={{fontWeight:500,color:'var(--mg)',whiteSpace:'normal',wordBreak:'break-word',maxWidth:160,lineHeight:1.3}}>{a.nombre} {a.apellido}</span>
+                            {hoyC&&<span style={{fontSize:9,marginLeft:4}}>🎂</span>}
+                            {semC&&<span style={{fontSize:9,marginLeft:4}}>🎁</span>}
+                          </div>
                         </div>
                       </td>
                       <td style={{textAlign:'center'}}>
-                        <span style={{fontSize:12,fontWeight:700,color:a.nivel==='A'?'#2D7A5A':a.nivel==='B'?'#185FA5':'#6A3A8A'}}>
-                          {a.nivel||'—'}
-                        </span>
+                        <span style={{fontSize:12,fontWeight:700,color:a.nivel==='A'?'#2D7A5A':a.nivel==='B'?'#185FA5':'#6A3A8A'}}>{a.nivel||'—'}</span>
                       </td>
                       <td style={{whiteSpace:'nowrap'}}>{a.plan==='mensual'?'Plan mensual':a.plan==='pack'?'Prepago':'Clases sueltas'}</td>
                       <td style={{textAlign:'center',fontFamily:'var(--font-num)',fontWeight:500}}>{a.clases_semana||2}</td>
                       <td style={{whiteSpace:'nowrap'}}>{a.instructores?`${a.instructores.nombre} ${a.instructores.apellido}`:'—'}</td>
                       <td style={{maxWidth:160}}>
-                        {a.notas ? <span title={a.notas} style={{fontSize:11,color:'var(--sl-m)',cursor:'help'}}>{a.notas.length>30?a.notas.slice(0,30)+'…':a.notas}</span> : <span style={{color:'var(--border)'}}>—</span>}
+                        {a.notas?<span title={a.notas} style={{fontSize:11,color:'var(--sl-m)',cursor:'help'}}>{a.notas.length>30?a.notas.slice(0,30)+'…':a.notas}</span>:<span style={{color:'var(--border)'}}>—</span>}
                       </td>
                       <td><span className={`est ${ep==='ok'?'e-ok':ep==='pendiente'?'e-pe':'e-ve'}`}>{ep==='ok'?'Al día':ep==='pendiente'?'Pendiente':'Sin pago'}</span></td>
                       <td>
                         <div style={{display:'flex',gap:4,whiteSpace:'nowrap'}}>
-                          {esAdmin && <button className="btn-sec" style={{fontSize:11,padding:'4px 7px'}} onClick={() => abrirHorarios(a)}>Horarios</button>}
-                          <button className="btn-sec" style={{fontSize:11,padding:'4px 7px'}} onClick={() => verHistorial(a)}>Historial</button>
-                          <button className="btn-sec" style={{fontSize:11,padding:'4px 7px'}} onClick={() => openModal(a)}>Editar</button>
-                          {esAdmin && <button className="btn-danger" style={{fontSize:11,padding:'4px 7px'}} onClick={() => handleDelete(a.id)}>✕</button>}
+                          {esAdmin&&<button className="btn-sec" style={{fontSize:11,padding:'4px 7px'}} onClick={()=>abrirHorarios(a)}>Horarios</button>}
+                          <button className="btn-sec" style={{fontSize:11,padding:'4px 7px'}} onClick={()=>verHistorial(a)}>Historial</button>
+                          <button className="btn-sec" style={{fontSize:11,padding:'4px 7px'}} onClick={()=>openModal(a)}>Editar</button>
+                          {esAdmin&&<button className="btn-danger" style={{fontSize:11,padding:'4px 7px'}} onClick={()=>handleDelete(a.id)}>x</button>}
                         </div>
                       </td>
                     </tr>
@@ -187,14 +249,15 @@ export default function Alumnos({ esAdmin }) {
       </div>
 
       {/* MODAL nuevo/editar */}
-      {modal && (
-        <Modal title={form.id?'Editar alumno':'Nuevo alumno'} onClose={() => setModal(false)}
-          footer={<><button className="btn-sec" onClick={() => setModal(false)}>Cancelar</button><button className="btn-pri" onClick={handleSave} disabled={saving}>{saving?'Guardando…':'Guardar alumno'}</button></>}>
+      {modal&&(
+        <Modal title={form.id?'Editar alumno':'Nuevo alumno'} onClose={()=>setModal(false)}
+          footer={<><button className="btn-sec" onClick={()=>setModal(false)}>Cancelar</button><button className="btn-pri" onClick={handleSave} disabled={saving}>{saving?'Guardando…':'Guardar alumno'}</button></>}>
           <div className="form-row2">
             <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Nombre</label><input className="form-inp" value={form.nombre} onChange={set('nombre')} placeholder="Nombre"/></div>
             <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Apellido</label><input className="form-inp" value={form.apellido} onChange={set('apellido')} placeholder="Apellido"/></div>
           </div>
           <div className="form-row" style={{marginTop:13}}><label className="form-lbl">Teléfono (WhatsApp)</label><input className="form-inp" value={form.telefono} onChange={set('telefono')} placeholder="+54 9 3765 ..."/></div>
+          <div className="form-row"><label className="form-lbl">Fecha de nacimiento</label><input className="form-inp" type="date" value={form.fecha_nacimiento} onChange={set('fecha_nacimiento')}/></div>
           <div className="form-row2">
             <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Plan</label><select className="form-inp" value={form.plan} onChange={set('plan')}><option value="mensual">Plan mensual</option><option value="pack">Prepago</option><option value="sueltas">Clases sueltas</option></select></div>
             <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Clases por semana</label><select className="form-inp" value={form.clases_semana} onChange={set('clases_semana')}><option value={1}>1</option><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option></select></div>
@@ -203,21 +266,22 @@ export default function Alumnos({ esAdmin }) {
             <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Nivel</label><select className="form-inp" value={form.nivel} onChange={set('nivel')}><option value="A">A</option><option value="B">B</option><option value="C">C</option></select></div>
             <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Instructor asignado</label><select className="form-inp" value={form.instructor_id} onChange={set('instructor_id')}><option value="">Sin asignar</option>{instructores.map(i=><option key={i.id} value={i.id}>{i.nombre} {i.apellido}</option>)}</select></div>
           </div>
-          <div className="form-row"><label className="form-lbl">Notas / Patologías / Condiciones especiales</label><textarea className="form-inp" value={form.notas} onChange={set('notas')} placeholder="Ej: Hernia lumbar L4-L5. Evitar flexión profunda..."/></div>
+          <div className="form-row"><label className="form-lbl">Notas / Patologías</label><textarea className="form-inp" value={form.notas} onChange={set('notas')} placeholder="Ej: Hernia lumbar L4-L5..."/></div>
         </Modal>
       )}
 
       {/* MODAL Horarios */}
-      {horariosModal && (
-        <Modal title={`Horarios — ${horariosModal.nombre} ${horariosModal.apellido}`} onClose={() => { setHorariosModal(null); setReplicarOk(false) }}
-          footer={<button className="btn-pri" onClick={() => { setHorariosModal(null); setReplicarOk(false) }}>Cerrar</button>}>
-          {horarios.length===0 ? <div className="empty" style={{padding:'12px 0'}}>Sin horarios fijos</div>
-            : horarios.map(h => (
+      {horariosModal&&(
+        <Modal title={`Horarios — ${horariosModal.nombre} ${horariosModal.apellido}`} onClose={()=>{setHorariosModal(null);setReplicarOk(false)}}
+          footer={<button className="btn-pri" onClick={()=>{setHorariosModal(null);setReplicarOk(false)}}>Cerrar</button>}>
+          {horarios.length===0?<div className="empty" style={{padding:'12px 0'}}>Sin horarios fijos</div>
+            :horarios.map(h=>(
               <div key={h.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 0',borderBottom:'1px solid var(--border)'}}>
                 <div><div style={{fontSize:13,fontWeight:500}}>{DIAS[h.dia_semana]} {h.hora?.slice(0,5)}</div><div style={{fontSize:11,color:'var(--sl-m)'}}>{h.nombre_clase} · {h.sala} · {h.instructores?`${h.instructores.nombre} ${h.instructores.apellido}`:'—'}</div></div>
-                <button className="btn-danger" style={{fontSize:11,padding:'3px 7px'}} onClick={() => eliminarHorario(h.id)}>✕</button>
+                <button className="btn-danger" style={{fontSize:11,padding:'3px 7px'}} onClick={()=>eliminarHorario(h.id)}>x</button>
               </div>
-            ))}
+            ))
+          }
           <div style={{marginTop:14,padding:'12px',background:'var(--sl-l)',borderRadius:10}}>
             <div style={{fontSize:11,fontWeight:500,color:'var(--sl-m)',textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:10}}>Agregar horario fijo</div>
             <div className="form-row2">
@@ -231,14 +295,14 @@ export default function Alumnos({ esAdmin }) {
             </div>
             <button className="btn-pri" style={{marginTop:10,fontSize:12}} onClick={agregarHorario} disabled={saving}>{saving?'…':'+ Agregar'}</button>
           </div>
-          {horarios.length>0 && (
+          {horarios.length>0&&(
             <div style={{marginTop:14,padding:'12px',background:'#FEF3E2',borderRadius:10,border:'1px solid #F0C060'}}>
               <div style={{fontSize:11,fontWeight:500,color:'#7A5010',textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:10}}>Generar clases en el calendario</div>
               <div className="form-row2">
                 <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Desde</label><input className="form-inp" type="date" value={replicarDesde} onChange={e=>setReplicarDesde(e.target.value)}/></div>
                 <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Semanas</label><select className="form-inp" value={replicarSemanas} onChange={e=>setReplicarSemanas(Number(e.target.value))}>{[1,2,3,4,6,8,12].map(n=><option key={n} value={n}>{n} semanas</option>)}</select></div>
               </div>
-              {replicarOk && <div style={{fontSize:12,color:'#2D7A5A',background:'#E4F4EE',padding:'7px 10px',borderRadius:7,marginBottom:8}}>¡Clases generadas correctamente!</div>}
+              {replicarOk&&<div style={{fontSize:12,color:'#2D7A5A',background:'#E4F4EE',padding:'7px 10px',borderRadius:7,marginBottom:8}}>Clases generadas correctamente</div>}
               <button className="btn-pri" style={{fontSize:12,background:'#D4A020',marginTop:8}} onClick={replicarClases} disabled={replicando}>{replicando?'Generando…':`Generar ${replicarSemanas} semanas`}</button>
             </div>
           )}
@@ -246,24 +310,22 @@ export default function Alumnos({ esAdmin }) {
       )}
 
       {/* MODAL historial */}
-      {historial && (
-        <Modal title={`Historial — ${historial.nombre} ${historial.apellido}`} onClose={() => setHistorial(null)} footer={<button className="btn-pri" onClick={() => setHistorial(null)}>Cerrar</button>}>
-          <div style={{marginTop:-18}}>
-            <table className="tbl">
-              <thead><tr><th>Fecha</th><th>Clase</th><th>Instructor</th><th>Asistió</th></tr></thead>
-              <tbody>
-                {histData.length===0 && <tr><td colSpan={4} className="empty">Sin registros aún</td></tr>}
-                {histData.map(h=>(
-                  <tr key={h.id}>
-                    <td>{h.clases?.fecha?format(new Date(h.clases.fecha+'T00:00:00'),'dd/MM/yy'):' —'}</td>
-                    <td>{h.clases?.nombre||'—'}</td>
-                    <td>{h.clases?.instructores?`${h.clases.instructores.nombre} ${h.clases.instructores.apellido}`:'—'}</td>
-                    <td><span className={`est ${h.asistio?'e-ok':'e-ve'}`}>{h.asistio?'Sí':'No'}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      {historial&&(
+        <Modal title={`Historial — ${historial.nombre} ${historial.apellido}`} onClose={()=>setHistorial(null)} footer={<button className="btn-pri" onClick={()=>setHistorial(null)}>Cerrar</button>}>
+          <table className="tbl">
+            <thead><tr><th>Fecha</th><th>Clase</th><th>Instructor</th><th>Asistió</th></tr></thead>
+            <tbody>
+              {histData.length===0&&<tr><td colSpan={4} className="empty">Sin registros</td></tr>}
+              {histData.map(h=>(
+                <tr key={h.id}>
+                  <td>{h.clases?.fecha?format(new Date(h.clases.fecha+'T00:00:00'),'dd/MM/yy'):'—'}</td>
+                  <td>{h.clases?.nombre||'—'}</td>
+                  <td>{h.clases?.instructores?`${h.clases.instructores.nombre} ${h.clases.instructores.apellido}`:'—'}</td>
+                  <td><span className={`est ${h.asistio?'e-ok':'e-ve'}`}>{h.asistio?'Sí':'No'}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </Modal>
       )}
     </>

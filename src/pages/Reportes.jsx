@@ -168,27 +168,21 @@ export default function Reportes() {
               Los precios por plan estan en $0. Configuralos en Finanzas - Configuracion.
             </div>
           )}
-          <div className="stats" style={{gridTemplateColumns:'repeat(4,1fr)',marginBottom:16}}>
-            <div className="sc" style={{'--acc':'var(--teal)'}}>
-              <div className="sc-lbl">Facturacion estimada</div>
-              <div className="sc-val" style={{fontSize:20}}>${Math.round(facturacion.total).toLocaleString('es-AR')}</div>
-              <div className="sc-sub">{format(parseISO(mes+'-01'),'MMMM yyyy',{locale:es})}</div>
-            </div>
-            <div className="sc" style={{'--acc':'var(--mg)'}}>
-              <div className="sc-lbl">Plan mensual</div>
-              <div className="sc-val" style={{fontSize:20}}>${Math.round((facturacion.porPlan.mensual||[]).reduce((s,a)=>s+a.monto,0)).toLocaleString('es-AR')}</div>
-              <div className="sc-sub">{(facturacion.porPlan.mensual||[]).length} alumnos</div>
-            </div>
-            <div className="sc" style={{'--acc':'var(--blue)'}}>
-              <div className="sc-lbl">Prepago</div>
-              <div className="sc-val" style={{fontSize:20}}>${Math.round((facturacion.porPlan.pack||[]).reduce((s,a)=>s+a.monto,0)).toLocaleString('es-AR')}</div>
-              <div className="sc-sub">{(facturacion.porPlan.pack||[]).length} alumnos</div>
-            </div>
-            <div className="sc" style={{'--acc':'var(--purple)'}}>
-              <div className="sc-lbl">Clases sueltas</div>
-              <div className="sc-val" style={{fontSize:20}}>${Math.round((facturacion.porPlan.sueltas||[]).reduce((s,a)=>s+a.monto,0)).toLocaleString('es-AR')}</div>
-              <div className="sc-sub">{(facturacion.porPlan.sueltas||[]).length} alumnos</div>
-            </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:12,marginBottom:16}}>
+            {[
+              { label:'Facturación estimada', valor:facturacion.total, sub:format(parseISO(mes+'-01'),'MMMM yyyy',{locale:es}), acc:'var(--teal)' },
+              { label:'Plan mensual',         valor:(facturacion.porPlan.mensual||[]).reduce((s,a)=>s+a.monto,0), sub:`${(facturacion.porPlan.mensual||[]).length} alumnos`, acc:'var(--mg)' },
+              { label:'Prepago',              valor:(facturacion.porPlan.pack||[]).reduce((s,a)=>s+a.monto,0),    sub:`${(facturacion.porPlan.pack||[]).length} alumnos`,    acc:'var(--blue)' },
+              { label:'Clases sueltas',       valor:(facturacion.porPlan.sueltas||[]).reduce((s,a)=>s+a.monto,0), sub:`${(facturacion.porPlan.sueltas||[]).length} alumnos`,  acc:'var(--purple)' },
+            ].map(card=>(
+              <div key={card.label} className="sc" style={{'--acc':card.acc}}>
+                <div className="sc-lbl">{card.label}</div>
+                <div style={{fontFamily:'var(--font-num)',fontSize:18,fontWeight:700,lineHeight:1.2,marginTop:4,wordBreak:'break-all'}}>
+                  ${Math.round(card.valor).toLocaleString('es-AR')}
+                </div>
+                <div className="sc-sub" style={{marginTop:4}}>{card.sub}</div>
+              </div>
+            ))}
           </div>
           <div className="panel">
             <div className="ph">
