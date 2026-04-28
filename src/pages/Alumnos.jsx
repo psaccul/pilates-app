@@ -215,7 +215,7 @@ export default function Alumnos({ esAdmin }) {
                         <div style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}} onClick={()=>window.dispatchEvent(new CustomEvent('open-ficha-alumno',{detail:a.id}))}>
                           <Avatar nombre={a.nombre} apellido={a.apellido} size={24} fontSize={9}/>
                           <div>
-                            <span style={{fontWeight:500,color:'var(--mg)',whiteSpace:'normal',wordBreak:'break-word',maxWidth:160,lineHeight:1.3}}>{a.nombre} {a.apellido}</span>
+                            <span style={{fontWeight:500,color:'var(--mg)',whiteSpace:'nowrap'}}>{a.nombre} {a.apellido}</span>
                             {hoyC&&<span style={{fontSize:9,marginLeft:4}}>🎂</span>}
                             {semC&&<span style={{fontSize:9,marginLeft:4}}>🎁</span>}
                           </div>
