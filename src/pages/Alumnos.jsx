@@ -39,7 +39,7 @@ export default function Alumnos({ esAdmin }) {
   async function fetchData() {
     setLoading(true)
     const [{ data: al }, { data: ins }] = await Promise.all([
-      supabase.from('alumnos').select('*, instructores(nombre,apellido), pagos(pagado)').eq('activo',true).order('apellido'),
+      supabase.from('alumnos').select('*, instructores(nombre,apellido), pagos(pagado,periodo,monto)').eq('activo',true).order('apellido'),
       supabase.from('instructores').select('id,nombre,apellido').eq('activo',true),
     ])
     setAlumnos(al||[])
@@ -67,8 +67,17 @@ export default function Alumnos({ esAdmin }) {
       nivel:form.nivel||'A', clases_semana:Number(form.clases_semana)||2,
       fecha_nacimiento:form.fecha_nacimiento||null, activo:true
     }
-    if (form.id) await supabase.from('alumnos').update(payload).eq('id',form.id)
-    else await supabase.from('alumnos').insert(payload)
+    if (form.id) {
+      await supabase.from('alumnos').update(payload).eq('id',form.id)
+    } else {
+      const { data: nuevo } = await supabase.from('alumnos').insert(payload).select().single()
+      if (nuevo) {
+        const concepto = form.plan==='mensual'?'Plan mensual':form.plan==='pack'?'Pack prepago':'Clase suelta'
+        const periodo = form.plan==='mensual' ? format(new Date(),'yyyy-MM') : null
+        await supabase.from('pagos').insert({ alumno_id:nuevo.id, concepto, monto:null, medio:'efectivo', pagado:false, fecha_pago:null, periodo })
+        if (form.plan==='mensual') localStorage.setItem('pilates_lastPagosGen', format(new Date(),'yyyy-MM'))
+      }
+    }
     setSaving(false); setModal(false); fetchData()
   }
 
@@ -130,6 +139,10 @@ export default function Alumnos({ esAdmin }) {
     if (p.length===0) return 'sin-pago'
     if (p.some(x=>!x.pagado)) return 'pendiente'
     return 'ok'
+  }
+
+  function deudaMeses(alumno) {
+    return (alumno.pagos||[]).filter(x=>!x.pagado).length
   }
 
   function cumpleHoy(alumno) {
@@ -207,6 +220,7 @@ export default function Alumnos({ esAdmin }) {
                 {filtered.length===0&&<tr><td colSpan={8} className="empty">No se encontraron alumnos</td></tr>}
                 {filtered.map(a => {
                   const ep = estadoPago(a)
+                  const deuda = deudaMeses(a)
                   const hoyC = cumpleHoy(a)
                   const semC = !hoyC && cumpleEstaSemana(a)
                   return (
@@ -230,7 +244,18 @@ export default function Alumnos({ esAdmin }) {
                       <td style={{maxWidth:160}}>
                         {a.notas?<span title={a.notas} style={{fontSize:11,color:'var(--sl-m)',cursor:'help'}}>{a.notas.length>30?a.notas.slice(0,30)+'…':a.notas}</span>:<span style={{color:'var(--border)'}}>—</span>}
                       </td>
-                      <td><span className={`est ${ep==='ok'?'e-ok':ep==='pendiente'?'e-pe':'e-ve'}`}>{ep==='ok'?'Al día':ep==='pendiente'?'Pendiente':'Sin pago'}</span></td>
+                      <td>
+                        <div style={{display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}}>
+                          <span className={`est ${ep==='ok'?'e-ok':ep==='pendiente'?'e-pe':'e-ve'}`}>
+                            {ep==='ok'?'Al día':ep==='pendiente'?'Pendiente':'Sin pago'}
+                          </span>
+                          {deuda > 0 && (
+                            <span style={{fontSize:9,background:'#FDECEA',color:'#B03030',padding:'2px 6px',borderRadius:4,fontWeight:700,whiteSpace:'nowrap'}}>
+                              {deuda} {deuda===1?'mes':'meses'}
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td>
                         <div style={{display:'flex',gap:4,whiteSpace:'nowrap'}}>
                           {esAdmin&&<button className="btn-sec" style={{fontSize:11,padding:'4px 7px'}} onClick={()=>abrirHorarios(a)}>Horarios</button>}

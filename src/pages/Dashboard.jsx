@@ -8,7 +8,7 @@ import { es } from 'date-fns/locale'
 const COLORES = ['var(--mg)','var(--blue)','var(--teal)','var(--purple)']
 
 export default function Dashboard({ setPage, esGerente }) {
-  const [stats, setStats]       = useState({ clases:0, alumnos:0, asistencia:0, pendientes:0 })
+  const [stats, setStats]       = useState({ clases:0, alumnos:0, asistencia:0, pendientes:0, sinPago:0 })
   const [clases, setClases]     = useState([])
   const [alumnos, setAlumnos]   = useState([])
   const [alertas, setAlertas]   = useState([])
@@ -19,8 +19,9 @@ export default function Dashboard({ setPage, esGerente }) {
   const [panelAsist, setPanelAsist]     = useState(false)
   const [panelPagos, setPanelPagos]     = useState(false)
 
-  const [todosAlumnos, setTodosAlumnos] = useState([])
-  const [pagosPend, setPagosPend]       = useState([])
+  const [todosAlumnos, setTodosAlumnos]   = useState([])
+  const [pagosPend, setPagosPend]         = useState([])
+  const [alumnosSinPago, setAlumnosSinPago] = useState([])
   const [asistMes, setAsistMes]         = useState([])
   const [clasesDetalle, setClasesDetalle] = useState([])
   const [loadingPanel, setLoadingPanel] = useState(false)
@@ -31,8 +32,35 @@ export default function Dashboard({ setPage, esGerente }) {
 
   useEffect(() => { fetchAll() }, [])
 
+  async function generarPagosMensuales() {
+    const currentPeriodo = format(new Date(), 'yyyy-MM')
+    if (localStorage.getItem('pilates_lastPagosGen') === currentPeriodo) return
+
+    const { data: alumnosMensuales } = await supabase
+      .from('alumnos').select('id').eq('activo', true).eq('plan', 'mensual')
+    if (!alumnosMensuales?.length) return
+
+    const ids = alumnosMensuales.map(a => a.id)
+    const { data: pagosExistentes } = await supabase
+      .from('pagos').select('alumno_id').eq('periodo', currentPeriodo).in('alumno_id', ids)
+
+    const yaConPago = new Set((pagosExistentes||[]).map(p => p.alumno_id))
+    const sinPagoMes = alumnosMensuales.filter(a => !yaConPago.has(a.id))
+
+    if (sinPagoMes.length > 0) {
+      await supabase.from('pagos').insert(
+        sinPagoMes.map(a => ({
+          alumno_id: a.id, concepto: 'Plan mensual',
+          monto: null, medio: 'efectivo', pagado: false, periodo: currentPeriodo,
+        }))
+      )
+    }
+    localStorage.setItem('pilates_lastPagosGen', currentPeriodo)
+  }
+
   async function fetchAll() {
     setLoading(true)
+    await generarPagosMensuales()
     const [
       { data: clasesHoy },
       { data: alumnosData },
@@ -40,6 +68,7 @@ export default function Dashboard({ setPage, esGerente }) {
       { data: asistData },
       { data: packsData },
       { data: config },
+      { data: todosAlumnosSimple },
     ] = await Promise.all([
       supabase.from('clases')
         .select('*, instructores(nombre,apellido), asistencias(id,alumno_id,asistio,estado_asistencia,recuperacion,alumnos(nombre,apellido))')
@@ -47,19 +76,22 @@ export default function Dashboard({ setPage, esGerente }) {
       supabase.from('alumnos')
         .select('*, instructores(nombre,apellido), pagos(pagado)')
         .eq('activo', true).order('created_at',{ascending:false}).limit(5),
-      supabase.from('pagos').select('pagado'),
+      supabase.from('pagos').select('pagado,monto'),
       supabase.from('asistencias').select('asistio').eq('asistio', true),
       supabase.from('packs').select('*, alumnos(nombre,apellido)').eq('activo', true),
       supabase.from('configuracion').select('*').eq('id', 1).maybeSingle(),
+      supabase.from('alumnos').select('id, pagos(id)').eq('activo', true),
     ])
 
     setClases(clasesHoy || [])
     setAlumnos(alumnosData || [])
+    const sinPagoCount = (todosAlumnosSimple||[]).filter(a => (a.pagos||[]).length === 0).length
     setStats({
       clases:     clasesHoy?.length || 0,
       alumnos:    (alumnosData||[]).length,
       asistencia: (asistData||[]).length,
-      pendientes: (pagosData||[]).filter(p=>!p.pagado).length,
+      pendientes: (pagosData||[]).filter(p=>!p.pagado).reduce((s,p)=>s+Number(p.monto||0),0),
+      sinPago:    sinPagoCount,
     })
 
     // Construir alertas
@@ -73,7 +105,7 @@ export default function Dashboard({ setPage, esGerente }) {
           tipo: 'cobro',
           color: '#185FA5',
           bg: '#E6F1FB',
-          msg: `Período de cobro activo: del día ${cobro_dia_inicio} al ${cobro_dia_fin}. Hay ${(pagosData||[]).filter(p=>!p.pagado).length} pagos pendientes.`,
+          msg: `Período de cobro activo: del día ${cobro_dia_inicio} al ${cobro_dia_fin}. Total pendiente: $${Math.round((pagosData||[]).filter(p=>!p.pagado).reduce((s,p)=>s+Number(p.monto||0),0)).toLocaleString('es-AR')}.`,
         })
       }
     }
@@ -131,10 +163,12 @@ export default function Dashboard({ setPage, esGerente }) {
   async function abrirPanelPagos() {
     setPanelPagos(true)
     setLoadingPanel(true)
-    const { data } = await supabase.from('pagos')
-      .select('*, alumnos(nombre,apellido)')
-      .eq('pagado',false).order('created_at',{ascending:false})
-    setPagosPend(data || [])
+    const [{ data: pendData }, { data: todosAl }] = await Promise.all([
+      supabase.from('pagos').select('*, alumnos(nombre,apellido)').eq('pagado',false).order('created_at',{ascending:false}),
+      supabase.from('alumnos').select('id, nombre, apellido, plan, pagos(id)').eq('activo', true),
+    ])
+    setPagosPend(pendData || [])
+    setAlumnosSinPago((todosAl||[]).filter(a => (a.pagos||[]).length === 0))
     setLoadingPanel(false)
   }
 
@@ -150,9 +184,10 @@ export default function Dashboard({ setPage, esGerente }) {
   }
 
   async function marcarPagado(pagoId) {
+    const pago = pagosPend.find(p => p.id === pagoId)
     await supabase.from('pagos').update({ pagado:true, fecha_pago:today }).eq('id',pagoId)
     setPagosPend(prev => prev.filter(p=>p.id!==pagoId))
-    setStats(s => ({...s, pendientes: Math.max(0, s.pendientes-1)}))
+    setStats(s => ({...s, pendientes: Math.max(0, s.pendientes - Number(pago?.monto||0))}))
   }
 
   function resumen(clase) {
@@ -225,9 +260,13 @@ export default function Dashboard({ setPage, esGerente }) {
         </div>
         <div className="sc" style={{'--acc':'var(--purple)',cursor:'pointer'}} onClick={abrirPanelPagos}>
           <div className="sc-lbl">Pagos pendientes</div>
-          <div className="sc-val">{stats.pendientes}</div>
-          <div className="sc-sub" style={{color:stats.pendientes>0?'#B03030':'var(--sl-m)'}}>
-            {stats.pendientes>0?'Revisar →':'Todo al día'}
+          <div className="sc-val" style={{fontSize: stats.pendientes > 99999 ? 18 : undefined}}>
+            {stats.pendientes > 0 ? `$${Math.round(stats.pendientes).toLocaleString('es-AR')}` : '$0'}
+          </div>
+          <div className="sc-sub" style={{color:(stats.pendientes>0||stats.sinPago>0)?'#B03030':'var(--sl-m)'}}>
+            {stats.sinPago > 0
+              ? `${stats.sinPago} sin registro · Revisar →`
+              : stats.pendientes > 0 ? 'Revisar →' : 'Todo al día'}
           </div>
         </div>
       </div>
@@ -406,31 +445,53 @@ export default function Dashboard({ setPage, esGerente }) {
 
       {/* MODAL: Pagos pendientes */}
       {panelPagos && (
-        <Modal title={`Pagos pendientes (${pagosPend.length})`}
+        <Modal title={`Pagos pendientes (${pagosPend.length + alumnosSinPago.length})`}
           onClose={() => setPanelPagos(false)}
           footer={<>
             <button className="btn-sec" onClick={() => { setPanelPagos(false); setPage('pagos') }}>Ir a pagos →</button>
             <button className="btn-pri" onClick={() => setPanelPagos(false)}>Cerrar</button>
           </>}>
-          {loadingPanel ? <div className="loading">Cargando…</div>
-            : pagosPend.length===0
+          {loadingPanel ? <div className="loading">Cargando…</div> : <>
+            {pagosPend.length===0 && alumnosSinPago.length===0
               ? <div className="empty" style={{color:'var(--teal)'}}>¡Todo al día!</div>
-              : pagosPend.map(p => (
-                <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 0',borderBottom:'1px solid var(--border)'}}>
-                  <div>
-                    <div style={{fontSize:13,fontWeight:500}}>{p.alumnos?.nombre} {p.alumnos?.apellido}</div>
-                    <div style={{fontSize:11,color:'var(--sl-m)',marginTop:1}}>
-                      {p.concepto} · {p.monto?`$${Number(p.monto).toLocaleString('es-AR')}`:'—'} ·&nbsp;
-                      <span className={p.medio==='efectivo'?'tag-ef':p.medio==='mercadopago'?'tag-mp':'tag-tr'}>
-                        {p.medio==='efectivo'?'Efectivo':p.medio==='mercadopago'?'Mercado Pago':'Transferencia'}
-                      </span>
-                    </div>
+              : null}
+
+            {pagosPend.map(p => (
+              <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 0',borderBottom:'1px solid var(--border)'}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:500}}>{p.alumnos?.nombre} {p.alumnos?.apellido}</div>
+                  <div style={{fontSize:11,color:'var(--sl-m)',marginTop:1}}>
+                    {p.concepto} · {p.monto?`$${Number(p.monto).toLocaleString('es-AR')}`:'sin monto'} ·&nbsp;
+                    <span className={p.medio==='efectivo'?'tag-ef':p.medio==='mercadopago'?'tag-mp':'tag-tr'}>
+                      {p.medio==='efectivo'?'Efectivo':p.medio==='mercadopago'?'Mercado Pago':'Transferencia'}
+                    </span>
                   </div>
-                  <button className="btn-pri" style={{fontSize:11,padding:'4px 12px'}}
-                    onClick={() => marcarPagado(p.id)}>Marcar pagado</button>
                 </div>
-              ))
-          }
+                <button className="btn-pri" style={{fontSize:11,padding:'4px 12px'}}
+                  onClick={() => marcarPagado(p.id)}>Marcar pagado</button>
+              </div>
+            ))}
+
+            {alumnosSinPago.length > 0 && (
+              <>
+                <div style={{fontSize:11,fontWeight:600,color:'#B03030',textTransform:'uppercase',letterSpacing:'0.06em',margin:'14px 0 6px',paddingTop: pagosPend.length>0?10:0, borderTop: pagosPend.length>0?'1px solid var(--border)':'none'}}>
+                  Sin registro de pago ({alumnosSinPago.length})
+                </div>
+                {alumnosSinPago.map(a => (
+                  <div key={a.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 0',borderBottom:'1px solid var(--border)'}}>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:500}}>{a.nombre} {a.apellido}</div>
+                      <div style={{fontSize:11,color:'var(--sl-m)',marginTop:1}}>
+                        {a.plan==='mensual'?'Plan mensual':a.plan==='pack'?'Pack prepago':'Clases sueltas'} · Sin pago registrado
+                      </div>
+                    </div>
+                    <button className="btn-sec" style={{fontSize:11,padding:'4px 12px',color:'#B03030',borderColor:'#B0303040'}}
+                      onClick={() => { setPanelPagos(false); setPage('pagos') }}>Registrar →</button>
+                  </div>
+                ))}
+              </>
+            )}
+          </>}
         </Modal>
       )}
     </>

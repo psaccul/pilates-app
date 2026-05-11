@@ -5,7 +5,7 @@ import Toggle from '../components/Toggle'
 import Avatar from '../components/Avatar'
 import { format } from 'date-fns'
 
-const emptyForm = { alumno_id:'', concepto:'', monto:'', medio:'efectivo', pagado:true, fecha_pago:'' }
+const emptyForm = { alumno_id:'', concepto:'', monto:'', medio:'efectivo', pagado:true, fecha_pago:'', periodo:'' }
 
 export default function Pagos() {
   const [pagos, setPagos]     = useState([])
@@ -35,15 +35,16 @@ export default function Pagos() {
   }
 
   function openModal(pago = null) {
-    setForm(pago ? { id:pago.id, alumno_id:pago.alumno_id, concepto:pago.concepto, monto:pago.monto||'', medio:pago.medio, pagado:pago.pagado, fecha_pago:pago.fecha_pago||'' }
-      : { ...emptyForm, fecha_pago:format(new Date(),'yyyy-MM-dd') })
+    setForm(pago
+      ? { id:pago.id, alumno_id:pago.alumno_id, concepto:pago.concepto, monto:pago.monto||'', medio:pago.medio, pagado:pago.pagado, fecha_pago:pago.fecha_pago||'', periodo:pago.periodo||'' }
+      : { ...emptyForm, fecha_pago:format(new Date(),'yyyy-MM-dd'), periodo:format(new Date(),'yyyy-MM') })
     setModal(true)
   }
 
   async function handleSave() {
     if (!form.alumno_id || !form.concepto) return
     setSaving(true)
-    const payload = { alumno_id:form.alumno_id, concepto:form.concepto, monto:form.monto?Number(form.monto):null, medio:form.medio, pagado:form.pagado, fecha_pago:form.pagado?(form.fecha_pago||format(new Date(),'yyyy-MM-dd')):null }
+    const payload = { alumno_id:form.alumno_id, concepto:form.concepto, monto:form.monto?Number(form.monto):null, medio:form.medio, pagado:form.pagado, fecha_pago:form.pagado?(form.fecha_pago||format(new Date(),'yyyy-MM-dd')):null, periodo:form.periodo||null }
     if (form.id) await supabase.from('pagos').update(payload).eq('id',form.id)
     else await supabase.from('pagos').insert(payload)
     setSaving(false); setModal(false); fetchData()
@@ -93,11 +94,11 @@ export default function Pagos() {
               <thead>
                 <tr>
                   <th style={{position:'sticky',left:0,background:'var(--sl-l)',zIndex:2}}>Alumno</th>
-                  <th>Concepto</th><th>Monto</th><th>Medio</th><th>Fecha</th><th>Estado</th><th>Acciones</th>
+                  <th>Concepto</th><th>Período</th><th>Monto</th><th>Medio</th><th>Fecha</th><th>Estado</th><th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                {filtrados.length===0 && <tr><td colSpan={7} className="empty">Sin registros</td></tr>}
+                {filtrados.length===0 && <tr><td colSpan={8} className="empty">Sin registros</td></tr>}
                 {filtrados.map(p=>(
                   <tr key={p.id}>
                     <td className="col-sticky">
@@ -107,6 +108,7 @@ export default function Pagos() {
                       </div>
                     </td>
                     <td style={{whiteSpace:'nowrap'}}>{p.concepto}</td>
+                    <td style={{fontSize:11,color:'var(--sl-m)',whiteSpace:'nowrap'}}>{p.periodo||'—'}</td>
                     <td style={{fontWeight:500,fontFamily:'var(--font-num)',whiteSpace:'nowrap'}}>{p.monto!=null?`$${Number(p.monto).toLocaleString('es-AR')}`:'—'}</td>
                     <td>{medioTag(p.medio)}</td>
                     <td style={{fontSize:11,color:'var(--sl-m)',whiteSpace:'nowrap'}}>{p.fecha_pago?format(new Date(p.fecha_pago+'T00:00:00'),'dd/MM/yy'):'—'}</td>
@@ -134,7 +136,8 @@ export default function Pagos() {
             <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Monto</label><input className="form-inp" type="number" value={form.monto} onChange={set('monto')} placeholder="0"/></div>
             <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Medio de pago</label><select className="form-inp" value={form.medio} onChange={set('medio')}><option value="efectivo">Efectivo</option><option value="mercadopago">Mercado Pago</option><option value="transferencia">Transferencia</option></select></div>
           </div>
-          <div className="form-row" style={{marginTop:13}}><label className="form-lbl">Fecha de pago</label><input className="form-inp" type="date" value={form.fecha_pago} onChange={set('fecha_pago')}/></div>
+          <div className="form-row" style={{marginTop:13}}><label className="form-lbl">Período (mes que corresponde)</label><input className="form-inp" type="month" value={form.periodo} onChange={set('periodo')}/></div>
+          <div className="form-row"><label className="form-lbl">Fecha de pago</label><input className="form-inp" type="date" value={form.fecha_pago} onChange={set('fecha_pago')}/></div>
           <div className="form-row"><label className="form-lbl">¿Ya pagó?</label><div style={{marginTop:6}}><Toggle value={form.pagado} onChange={v=>setForm(f=>({...f,pagado:v}))} labelOn="Sí, ya pagó" labelOff="Pendiente"/></div></div>
         </Modal>
       )}
