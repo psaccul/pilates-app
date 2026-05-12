@@ -72,6 +72,10 @@ export default function Alumnos({ esAdmin }) {
   async function handleSave() {
     if (!form.nombre || !form.apellido) return
     setSaving(true)
+    // Si hay un horario a medio cargar sin confirmar, incluirlo al guardar
+    const todosHorarios = (formHorarioNew.hora && formHorarioNew.nombre_clase)
+      ? [...formHorarios, { ...formHorarioNew, dia_semana:Number(formHorarioNew.dia_semana), _isNew:true }]
+      : formHorarios
     const payload = {
       nombre:form.nombre, apellido:form.apellido, telefono:form.telefono,
       plan:form.plan, instructor_id:form.instructor_id||null, notas:form.notas,
@@ -94,9 +98,33 @@ export default function Alumnos({ esAdmin }) {
     // Guardar horarios
     if (horariosToDelete.length > 0)
       await supabase.from('horarios_alumno').update({ activo:false }).in('id', horariosToDelete)
-    const nuevos = formHorarios.filter(h=>h._isNew)
+    const nuevos = todosHorarios.filter(h=>h._isNew)
     for (const h of nuevos) {
       await supabase.from('horarios_alumno').insert({ alumno_id:alumnoId, dia_semana:Number(h.dia_semana), hora:h.hora, instructor_id:h.instructor_id||null, sala:h.sala, nombre_clase:h.nombre_clase, activo:true })
+    }
+    // Generar clases automáticamente para los horarios nuevos (4 semanas desde hoy)
+    if (nuevos.length > 0) {
+      const desde = new Date(); desde.setHours(0,0,0,0)
+      for (let semana=0; semana<4; semana++) {
+        for (const h of nuevos) {
+          const base = addWeeks(desde, semana)
+          const inicioSemana = startOfWeek(base, {weekStartsOn:1})
+          const fechaDia = addDays(inicioSemana, Number(h.dia_semana))
+          if (fechaDia < desde) continue
+          const fechaStr = format(fechaDia, 'yyyy-MM-dd')
+          let q = supabase.from('clases').select('id').eq('fecha',fechaStr).eq('hora',h.hora)
+          if (h.instructor_id) q = q.eq('instructor_id', h.instructor_id)
+          else q = q.is('instructor_id', null)
+          const { data: existe } = await q.maybeSingle()
+          let claseId
+          if (!existe) {
+            const { data: nueva } = await supabase.from('clases').insert({ nombre:h.nombre_clase, tipo:'grupal', instructor_id:h.instructor_id||null, fecha:fechaStr, hora:h.hora, sala:h.sala||'Sala A', capacidad:4 }).select().single()
+            claseId = nueva?.id
+          } else { claseId = existe.id }
+          if (claseId) await supabase.from('asistencias').upsert({ clase_id:claseId, alumno_id:alumnoId, asistio:false, recuperacion:false, estado_asistencia:'pendiente' }, {onConflict:'clase_id,alumno_id'})
+        }
+      }
+      window.dispatchEvent(new CustomEvent('horarios-generados'))
     }
     setSaving(false); setModal(false); fetchData()
   }
@@ -135,8 +163,12 @@ export default function Alumnos({ esAdmin }) {
         const base = addWeeks(desde, semana)
         const inicioSemana = startOfWeek(base,{weekStartsOn:1})
         const fechaDia = addDays(inicioSemana, h.dia_semana)
+        if (fechaDia < desde) continue  // evitar generar clases antes de la fecha de inicio
         const fechaStr = format(fechaDia,'yyyy-MM-dd')
-        const { data: existe } = await supabase.from('clases').select('id').eq('fecha',fechaStr).eq('hora',h.hora).eq('instructor_id',h.instructor_id||'').maybeSingle()
+        let query = supabase.from('clases').select('id').eq('fecha',fechaStr).eq('hora',h.hora)
+        if (h.instructor_id) query = query.eq('instructor_id', h.instructor_id)
+        else query = query.is('instructor_id', null)
+        const { data: existe } = await query.maybeSingle()
         let claseId
         if (!existe) {
           const { data: nueva } = await supabase.from('clases').insert({ nombre:h.nombre_clase, tipo:'grupal', instructor_id:h.instructor_id||null, fecha:fechaStr, hora:h.hora, sala:h.sala, capacidad:4 }).select().single()
@@ -146,6 +178,7 @@ export default function Alumnos({ esAdmin }) {
       }
     }
     setReplicando(false); setReplicarOk(true)
+    window.dispatchEvent(new CustomEvent('horarios-generados'))
   }
 
   async function verHistorial(alumno) {

@@ -52,6 +52,7 @@ export default function Calendario({ esAdmin }) {
   const [saving, setSaving]         = useState(false)
   const [dragging, setDragging]     = useState(null)
   const [dragOver, setDragOver]     = useState(null)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   // Multi-selección de alumnos
   const [seleccionados, setSeleccionados] = useState([])
@@ -66,7 +67,12 @@ export default function Calendario({ esAdmin }) {
   }, [])
 
   useEffect(() => { fetchBase() }, [])
-  useEffect(() => { fetchClases() }, [refDate, esMobile, vistaMovil])
+  useEffect(() => { fetchClases() }, [refDate, esMobile, vistaMovil, refreshKey])
+  useEffect(() => {
+    const handler = () => setRefreshKey(k => k + 1)
+    window.addEventListener('horarios-generados', handler)
+    return () => window.removeEventListener('horarios-generados', handler)
+  }, [])
 
   async function fetchBase() {
     const [{ data: ins }, { data: al }] = await Promise.all([
