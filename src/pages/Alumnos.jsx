@@ -22,6 +22,9 @@ export default function Alumnos({ esAdmin }) {
   const [horarioForm, setHorarioForm]   = useState(emptyHorario)
   const [saving, setSaving]             = useState(false)
   const [search, setSearch]             = useState('')
+  const [formHorarios, setFormHorarios]       = useState([])
+  const [formHorarioNew, setFormHorarioNew]   = useState(emptyHorario)
+  const [horariosToDelete, setHorariosToDelete] = useState([])
   const [replicarSemanas, setReplicarSemanas] = useState(4)
   const [replicarDesde, setReplicarDesde]     = useState(format(new Date(),'yyyy-MM-dd'))
   const [replicando, setReplicando]           = useState(false)
@@ -47,7 +50,7 @@ export default function Alumnos({ esAdmin }) {
     setLoading(false)
   }
 
-  function openModal(alumno = null) {
+  async function openModal(alumno = null) {
     setForm(alumno ? {
       id:alumno.id, nombre:alumno.nombre, apellido:alumno.apellido,
       telefono:alumno.telefono||'', plan:alumno.plan,
@@ -55,6 +58,14 @@ export default function Alumnos({ esAdmin }) {
       nivel:alumno.nivel||'A', clases_semana:alumno.clases_semana||2,
       fecha_nacimiento:alumno.fecha_nacimiento||''
     } : emptyForm)
+    setFormHorarioNew({ ...emptyHorario, instructor_id: alumno?.instructor_id||'' })
+    setHorariosToDelete([])
+    if (alumno) {
+      const { data } = await supabase.from('horarios_alumno').select('*').eq('alumno_id',alumno.id).eq('activo',true).order('dia_semana').order('hora')
+      setFormHorarios(data||[])
+    } else {
+      setFormHorarios([])
+    }
     setModal(true)
   }
 
@@ -67,16 +78,25 @@ export default function Alumnos({ esAdmin }) {
       nivel:form.nivel||'A', clases_semana:Number(form.clases_semana)||2,
       fecha_nacimiento:form.fecha_nacimiento||null, activo:true
     }
+    let alumnoId = form.id
     if (form.id) {
       await supabase.from('alumnos').update(payload).eq('id',form.id)
     } else {
       const { data: nuevo } = await supabase.from('alumnos').insert(payload).select().single()
       if (nuevo) {
+        alumnoId = nuevo.id
         const concepto = form.plan==='mensual'?'Plan mensual':form.plan==='pack'?'Pack prepago':'Clase suelta'
         const periodo = form.plan==='mensual' ? format(new Date(),'yyyy-MM') : null
         await supabase.from('pagos').insert({ alumno_id:nuevo.id, concepto, monto:null, medio:'efectivo', pagado:false, fecha_pago:null, periodo })
         if (form.plan==='mensual') localStorage.setItem('pilates_lastPagosGen', format(new Date(),'yyyy-MM'))
       }
+    }
+    // Guardar horarios
+    if (horariosToDelete.length > 0)
+      await supabase.from('horarios_alumno').update({ activo:false }).in('id', horariosToDelete)
+    const nuevos = formHorarios.filter(h=>h._isNew)
+    for (const h of nuevos) {
+      await supabase.from('horarios_alumno').insert({ alumno_id:alumnoId, dia_semana:Number(h.dia_semana), hora:h.hora, instructor_id:h.instructor_id||null, sala:h.sala, nombre_clase:h.nombre_clase, activo:true })
     }
     setSaving(false); setModal(false); fetchData()
   }
@@ -179,8 +199,20 @@ export default function Alumnos({ esAdmin }) {
   const cumpleHoyList   = alumnos.filter(a=>cumpleHoy(a))
   const cumpleSemanaList = alumnos.filter(a=>!cumpleHoy(a)&&cumpleEstaSemana(a))
 
-  const set  = k => e => setForm(f=>({...f,[k]:e.target.value}))
-  const setH = k => e => setHorarioForm(f=>({...f,[k]:e.target.value}))
+  const set   = k => e => setForm(f=>({...f,[k]:e.target.value}))
+  const setH  = k => e => setHorarioForm(f=>({...f,[k]:e.target.value}))
+  const setHN = k => e => setFormHorarioNew(f=>({...f,[k]:e.target.value}))
+
+  function agregarHorarioEnModal() {
+    if (!formHorarioNew.hora || !formHorarioNew.nombre_clase) return
+    setFormHorarios(prev=>[...prev, { ...formHorarioNew, dia_semana:Number(formHorarioNew.dia_semana), _isNew:true, _uid: Date.now() }])
+    setFormHorarioNew(f=>({ ...emptyHorario, instructor_id:f.instructor_id }))
+  }
+
+  function quitarHorarioEnModal(h) {
+    if (!h._isNew && h.id) setHorariosToDelete(prev=>[...prev, h.id])
+    setFormHorarios(prev=>prev.filter(x=> h._isNew ? x._uid!==h._uid : x.id!==h.id))
+  }
 
   return (
     <>
@@ -292,6 +324,36 @@ export default function Alumnos({ esAdmin }) {
             <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Instructor asignado</label><select className="form-inp" value={form.instructor_id} onChange={set('instructor_id')}><option value="">Sin asignar</option>{instructores.map(i=><option key={i.id} value={i.id}>{i.nombre} {i.apellido}</option>)}</select></div>
           </div>
           <div className="form-row"><label className="form-lbl">Notas / Patologías</label><textarea className="form-inp" value={form.notas} onChange={set('notas')} placeholder="Ej: Hernia lumbar L4-L5..."/></div>
+
+          {/* Horarios fijos */}
+          <div style={{marginTop:16,borderTop:'1px solid var(--border)',paddingTop:14}}>
+            <div style={{fontSize:11,fontWeight:600,color:'var(--sl-m)',textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:10}}>Días y horarios fijos</div>
+            {formHorarios.length===0
+              ? <div style={{fontSize:12,color:'var(--border)',marginBottom:10}}>Sin horarios asignados</div>
+              : formHorarios.map((h,i)=>(
+                  <div key={h._isNew?h._uid:h.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 8px',background:'var(--sl-l)',borderRadius:7,marginBottom:6}}>
+                    <div>
+                      <span style={{fontSize:13,fontWeight:500}}>{DIAS[h.dia_semana]} {h.hora?.slice(0,5)}</span>
+                      <span style={{fontSize:11,color:'var(--sl-m)',marginLeft:8}}>{h.nombre_clase}</span>
+                      {h._isNew&&<span style={{fontSize:9,marginLeft:6,color:'#2D7A5A',fontWeight:700}}>nuevo</span>}
+                    </div>
+                    <button className="btn-danger" style={{fontSize:11,padding:'2px 7px'}} onClick={()=>quitarHorarioEnModal(h)}>×</button>
+                  </div>
+                ))
+            }
+            <div style={{background:'var(--sl-l)',borderRadius:10,padding:'10px',marginTop:6}}>
+              <div className="form-row2">
+                <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Día</label><select className="form-inp" value={formHorarioNew.dia_semana} onChange={setHN('dia_semana')}>{DIAS.map((d,i)=><option key={i} value={i}>{d}</option>)}</select></div>
+                <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Hora</label><input className="form-inp" type="time" value={formHorarioNew.hora} onChange={setHN('hora')}/></div>
+              </div>
+              <div className="form-row" style={{marginTop:8}}><label className="form-lbl">Nombre de la clase</label><input className="form-inp" value={formHorarioNew.nombre_clase} onChange={setHN('nombre_clase')} placeholder="Ej: Reformer Intermedio"/></div>
+              <div className="form-row2">
+                <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Instructor</label><select className="form-inp" value={formHorarioNew.instructor_id} onChange={setHN('instructor_id')}><option value="">Sin asignar</option>{instructores.map(i=><option key={i.id} value={i.id}>{i.nombre} {i.apellido}</option>)}</select></div>
+                <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Sala</label><select className="form-inp" value={formHorarioNew.sala} onChange={setHN('sala')}><option value="Sala A">Sala A</option><option value="Sala B">Sala B</option></select></div>
+              </div>
+              <button className="btn-sec" style={{fontSize:12,marginTop:8}} onClick={agregarHorarioEnModal}>+ Agregar horario</button>
+            </div>
+          </div>
         </Modal>
       )}
 
