@@ -25,7 +25,8 @@ export default function Finanzas() {
 
   const [config, setConfig]             = useState({
     cobro_dia_inicio:1, cobro_dia_fin:10, nombre_estudio:'Studio Pilates Reformer',
-    precio_mensual:0, precio_prepago:0, precio_sueltas:0
+    precio_mensual:0, precio_prepago:0, precio_sueltas:0,
+    precio_mensual_1:0, precio_mensual_2:0, precio_mensual_3:0, precio_mensual_4:0, precio_mensual_5:0,
   })
   const [savingConfig, setSavingConfig] = useState(false)
   const [configOk, setConfigOk]         = useState(false)
@@ -86,12 +87,17 @@ export default function Finanzas() {
     setTarifas(tarMap)
     setLiquidaciones(liqData||[])
     if (configData) setConfig({
-      cobro_dia_inicio: configData.cobro_dia_inicio || 1,
-      cobro_dia_fin:    configData.cobro_dia_fin    || 10,
-      nombre_estudio:   configData.nombre_estudio   || 'Studio Pilates Reformer',
-      precio_mensual:   configData.precio_mensual   || 0,
-      precio_prepago:   configData.precio_prepago   || 0,
-      precio_sueltas:   configData.precio_sueltas   || 0,
+      cobro_dia_inicio:  configData.cobro_dia_inicio  || 1,
+      cobro_dia_fin:     configData.cobro_dia_fin     || 10,
+      nombre_estudio:    configData.nombre_estudio    || 'Studio Pilates Reformer',
+      precio_mensual:    configData.precio_mensual    || 0,
+      precio_prepago:    configData.precio_prepago    || 0,
+      precio_sueltas:    configData.precio_sueltas    || 0,
+      precio_mensual_1:  configData.precio_mensual_1  || 0,
+      precio_mensual_2:  configData.precio_mensual_2  || 0,
+      precio_mensual_3:  configData.precio_mensual_3  || 0,
+      precio_mensual_4:  configData.precio_mensual_4  || 0,
+      precio_mensual_5:  configData.precio_mensual_5  || 0,
     })
     setPacks(packsData||[])
     setAlumnos(alumnosData||[])
@@ -152,12 +158,17 @@ export default function Finanzas() {
     setSavingConfig(true)
     setConfigOk(false)
     await supabase.from('configuracion').update({
-      cobro_dia_inicio: Number(config.cobro_dia_inicio),
-      cobro_dia_fin:    Number(config.cobro_dia_fin),
-      nombre_estudio:   config.nombre_estudio,
-      precio_mensual:   Number(config.precio_mensual||0),
-      precio_prepago:   Number(config.precio_prepago||0),
-      precio_sueltas:   Number(config.precio_sueltas||0),
+      cobro_dia_inicio:  Number(config.cobro_dia_inicio),
+      cobro_dia_fin:     Number(config.cobro_dia_fin),
+      nombre_estudio:    config.nombre_estudio,
+      precio_mensual:    Number(config.precio_mensual||0),
+      precio_prepago:    Number(config.precio_prepago||0),
+      precio_sueltas:    Number(config.precio_sueltas||0),
+      precio_mensual_1:  Number(config.precio_mensual_1||0),
+      precio_mensual_2:  Number(config.precio_mensual_2||0),
+      precio_mensual_3:  Number(config.precio_mensual_3||0),
+      precio_mensual_4:  Number(config.precio_mensual_4||0),
+      precio_mensual_5:  Number(config.precio_mensual_5||0),
     }).eq('id',1)
     setSavingConfig(false)
     setConfigOk(true)
@@ -393,21 +404,28 @@ export default function Finanzas() {
             <div style={{fontSize:11,color:'var(--sl-m)',marginTop:6,marginBottom:16}}>El dashboard mostrará alerta azul durante este período cada mes.</div>
 
             <div style={{fontSize:12,color:'var(--sl-m)',marginBottom:8,fontWeight:500}}>Precios por plan</div>
+
+            <div style={{fontSize:11,color:'var(--sl-m)',marginBottom:6}}>Plan mensual — según clases por semana</div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8,marginBottom:12}}>
+              {[1,2,3,4,5].map(n=>(
+                <div key={n} className="form-row" style={{marginBottom:0}}>
+                  <label className="form-lbl">{n} clase{n>1?'s':''}/sem</label>
+                  <input className="form-inp" type="number" value={config[`precio_mensual_${n}`]||0} onChange={e=>setConfig(c=>({...c,[`precio_mensual_${n}`]:e.target.value}))} placeholder="0"/>
+                </div>
+              ))}
+            </div>
+
             <div className="form-row2">
-              <div className="form-row" style={{marginBottom:0}}>
-                <label className="form-lbl">Plan mensual</label>
-                <input className="form-inp" type="number" value={config.precio_mensual||0} onChange={e=>setConfig(c=>({...c,precio_mensual:e.target.value}))} placeholder="0"/>
-              </div>
               <div className="form-row" style={{marginBottom:0}}>
                 <label className="form-lbl">Prepago</label>
                 <input className="form-inp" type="number" value={config.precio_prepago||0} onChange={e=>setConfig(c=>({...c,precio_prepago:e.target.value}))} placeholder="0"/>
               </div>
+              <div className="form-row" style={{marginBottom:0}}>
+                <label className="form-lbl">Clases sueltas</label>
+                <input className="form-inp" type="number" value={config.precio_sueltas||0} onChange={e=>setConfig(c=>({...c,precio_sueltas:e.target.value}))} placeholder="0"/>
+              </div>
             </div>
-            <div className="form-row" style={{marginTop:12}}>
-              <label className="form-lbl">Clases sueltas</label>
-              <input className="form-inp" type="number" value={config.precio_sueltas||0} onChange={e=>setConfig(c=>({...c,precio_sueltas:e.target.value}))} placeholder="0"/>
-            </div>
-            <div style={{fontSize:11,color:'var(--sl-m)',marginBottom:16}}>Estos precios se usan en el reporte de Facturación proyectada.</div>
+            <div style={{fontSize:11,color:'var(--sl-m)',marginTop:8,marginBottom:16}}>Estos precios se usan en el reporte de Facturación proyectada.</div>
 
             {configOk && <div style={{fontSize:12,color:'#2D7A5A',background:'#E4F4EE',padding:'8px 12px',borderRadius:8,marginBottom:12}}>✓ Configuración guardada</div>}
             <button className="btn-pri" onClick={guardarConfig} disabled={savingConfig}>{savingConfig?'Guardando…':'Guardar configuración'}</button>
