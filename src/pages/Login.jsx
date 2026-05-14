@@ -12,7 +12,8 @@ const wrapStyle = {
 
 function Logo() {
   return (
-    <img src="/2.png" alt="CEI Pilates Reformer" style={{ width:'100%', display:'block' }}/>
+    <img src="/cei.png" alt="CEI Pilates Reformer"
+      style={{ width:'100%', maxHeight:260, objectFit:'cover', objectPosition:'center center', display:'block' }}/>
   )
 }
 
