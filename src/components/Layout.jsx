@@ -127,8 +127,8 @@ export default function Layout() {
       <div className={`sidebar-overlay${sidebarOpen?' open':''}`} onClick={() => setSidebar(false)} />
 
       <aside className={`sidebar${sidebarOpen?' open':''}`}>
-        <div className="logo" style={{padding:'20px 16px',textAlign:'center'}}>
-          <img src="/cei.png" alt="CEI Pilates Reformer" style={{width:'100%',maxWidth:140,borderRadius:8}}/>
+        <div className="logo" style={{padding:'14px 16px',textAlign:'center'}}>
+          <img src="/cei.png" alt="CEI Pilates Reformer" style={{width:'100%',maxWidth:110,borderRadius:8}}/>
         </div>
         <nav>
           {pages.map(p => (

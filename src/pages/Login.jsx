@@ -13,8 +13,7 @@ const wrapStyle = {
 function Logo() {
   return (
     <div style={{ textAlign:'center', marginBottom:32 }}>
-      <div style={{ fontFamily:'var(--font-display)', fontSize:28, fontWeight:300, color:'var(--dark)' }}>Studio</div>
-      <div style={{ fontSize:10, letterSpacing:'0.2em', color:'var(--mg-m)', textTransform:'uppercase', marginTop:4 }}>Pilates Reformer</div>
+      <img src="/cei.png" alt="CEI Pilates Reformer" style={{ width:160, borderRadius:8 }}/>
     </div>
   )
 }
