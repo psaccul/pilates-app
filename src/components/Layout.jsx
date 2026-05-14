@@ -209,7 +209,7 @@ export default function Layout() {
           {page==='calendario'   && <Calendario   esAdmin={esAdmin} />}
           {page==='alumnos'      && <Alumnos      esAdmin={esAdmin} />}
           {page==='instructores' && esAdmin && <Instructores />}
-          {page==='pagos'        && <Pagos />}
+          {page==='pagos'        && <Pagos esAdmin={esAdmin} />}
           {page==='reportes'     && esAdmin && <Reportes />}
           {page==='finanzas'     && esAdmin && <Finanzas />}
         </div>

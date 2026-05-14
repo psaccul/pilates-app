@@ -7,7 +7,7 @@ import { format } from 'date-fns'
 
 const emptyForm = { alumno_id:'', concepto:'', monto:'', medio:'efectivo', pagado:true, fecha_pago:'', periodo:'' }
 
-export default function Pagos() {
+export default function Pagos({ esAdmin }) {
   const [pagos, setPagos]     = useState([])
   const [alumnos, setAlumnos] = useState([])
   const [loading, setLoading] = useState(true)
@@ -44,10 +44,25 @@ export default function Pagos() {
   async function handleSave() {
     if (!form.alumno_id || !form.concepto) return
     setSaving(true)
-    const payload = { alumno_id:form.alumno_id, concepto:form.concepto, monto:form.monto?Number(form.monto):null, medio:form.medio, pagado:form.pagado, fecha_pago:form.pagado?(form.fecha_pago||format(new Date(),'yyyy-MM-dd')):null, periodo:form.periodo||null }
+    const necesitaConfirmacion = !esAdmin && (form.medio === 'mercadopago' || form.medio === 'transferencia') && form.pagado
+    const payload = {
+      alumno_id:  form.alumno_id,
+      concepto:   form.concepto,
+      monto:      form.monto ? Number(form.monto) : null,
+      medio:      form.medio,
+      pagado:     form.pagado,
+      fecha_pago: form.pagado ? (form.fecha_pago || format(new Date(),'yyyy-MM-dd')) : null,
+      periodo:    form.periodo || null,
+      confirmado: necesitaConfirmacion ? false : null,
+    }
     if (form.id) await supabase.from('pagos').update(payload).eq('id',form.id)
     else await supabase.from('pagos').insert(payload)
     setSaving(false); setModal(false); fetchData()
+  }
+
+  async function confirmarPago(id) {
+    await supabase.from('pagos').update({ confirmado: true }).eq('id', id)
+    fetchData()
   }
 
   async function handleDelete(id) {
@@ -62,8 +77,14 @@ export default function Pagos() {
   }
 
   const set = k => e => setForm(f=>({...f,[k]:e.target.value}))
-  const filtrados = pagos.filter(p=>filtro==='pendientes'?!p.pagado:filtro==='pagados'?p.pagado:true)
-  const totalPagado    = pagos.filter(p=>p.pagado).reduce((s,p)=>s+Number(p.monto||0),0)
+  const aConfirmar = pagos.filter(p=>p.confirmado===false)
+  const filtrados  = pagos.filter(p=>
+    filtro==='pendientes'   ? !p.pagado :
+    filtro==='pagados'      ? p.pagado && p.confirmado !== false :
+    filtro==='aconfirmar'   ? p.confirmado === false :
+    true
+  )
+  const totalPagado    = pagos.filter(p=>p.pagado && p.confirmado !== false).reduce((s,p)=>s+Number(p.monto||0),0)
   const totalPendiente = pagos.filter(p=>!p.pagado).reduce((s,p)=>s+Number(p.monto||0),0)
 
   const medioTag = m => {
@@ -81,8 +102,10 @@ export default function Pagos() {
       </div>
 
       <div className="tabs">
-        {['todos','pagados','pendientes'].map(f=>(
-          <div key={f} className={`tab${filtro===f?' active':''}`} onClick={() => setFiltro(f)}>{f.charAt(0).toUpperCase()+f.slice(1)}</div>
+        {[['todos','Todos'],['pagados','Pagados'],['pendientes','Pendientes'],['aconfirmar','A confirmar']].map(([id,label])=>(
+          <div key={id} className={`tab${filtro===id?' active':''}`} onClick={() => setFiltro(id)}>
+            {label}{id==='aconfirmar'&&aConfirmar.length>0&&<span style={{marginLeft:5,background:'#B03030',color:'#fff',borderRadius:99,fontSize:9,padding:'1px 5px',fontWeight:700}}>{aConfirmar.length}</span>}
+          </div>
         ))}
       </div>
 
@@ -112,11 +135,19 @@ export default function Pagos() {
                     <td style={{fontWeight:500,fontFamily:'var(--font-num)',whiteSpace:'nowrap'}}>{p.monto!=null?`$${Number(p.monto).toLocaleString('es-AR')}`:'—'}</td>
                     <td>{medioTag(p.medio)}</td>
                     <td style={{fontSize:11,color:'var(--sl-m)',whiteSpace:'nowrap'}}>{p.fecha_pago?format(new Date(p.fecha_pago+'T00:00:00'),'dd/MM/yy'):'—'}</td>
-                    <td><Toggle value={p.pagado} onChange={() => togglePagado(p)} labelOn="Pagado" labelOff="Pendiente"/></td>
+                    <td>
+                      {p.confirmado === false
+                        ? <span style={{fontSize:11,padding:'3px 8px',borderRadius:6,background:'#FEF3E2',color:'#7A5010',border:'1px solid #F0C060',whiteSpace:'nowrap',fontWeight:500}}>⏳ A confirmar</span>
+                        : <Toggle value={p.pagado} onChange={() => togglePagado(p)} labelOn="Pagado" labelOff="Pendiente"/>
+                      }
+                    </td>
                     <td>
                       <div style={{display:'flex',gap:5,whiteSpace:'nowrap'}}>
+                        {esAdmin && p.confirmado === false && (
+                          <button className="btn-pri" style={{fontSize:11,padding:'4px 8px',background:'#2D7A5A',borderColor:'#2D7A5A'}} onClick={() => confirmarPago(p.id)}>✓ Confirmar</button>
+                        )}
                         <button className="btn-sec" style={{fontSize:11,padding:'4px 8px'}} onClick={() => openModal(p)}>Editar</button>
-                        <button className="btn-danger" style={{fontSize:11,padding:'4px 8px'}} onClick={() => handleDelete(p.id)}>✕</button>
+                        {esAdmin && <button className="btn-danger" style={{fontSize:11,padding:'4px 8px'}} onClick={() => handleDelete(p.id)}>✕</button>}
                       </div>
                     </td>
                   </tr>
