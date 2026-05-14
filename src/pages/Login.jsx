@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 
 const cardStyle = {
-  background:'var(--white)', borderRadius:20, padding:'40px 36px',
+  background:'var(--white)', borderRadius:20, overflow:'hidden',
   width:360, maxWidth:'92vw', boxShadow:'0 20px 60px rgba(0,0,0,0.2)'
 }
 const wrapStyle = {
@@ -12,10 +12,7 @@ const wrapStyle = {
 
 function Logo() {
   return (
-    <div style={{ textAlign:'center', marginBottom:32 }}>
-      <div style={{ fontFamily:'var(--font-display)', fontSize:28, fontWeight:300, color:'var(--dark)' }}>Studio</div>
-      <div style={{ fontSize:10, letterSpacing:'0.2em', color:'var(--mg-m)', textTransform:'uppercase', marginTop:4 }}>Pilates Reformer</div>
-    </div>
+    <img src="/2.png" alt="CEI Pilates Reformer" style={{ width:'100%', display:'block' }}/>
   )
 }
 
@@ -147,10 +144,12 @@ export default function Login() {
     <div style={wrapStyle}>
       <div style={cardStyle}>
         <Logo />
-        {view === 'login'
-          ? <LoginForm onForgot={() => setView('forgot')} />
-          : <ForgotForm onBack={() => setView('login')} />
-        }
+        <div style={{ padding:'32px 36px 36px' }}>
+          {view === 'login'
+            ? <LoginForm onForgot={() => setView('forgot')} />
+            : <ForgotForm onBack={() => setView('login')} />
+          }
+        </div>
       </div>
     </div>
   )
