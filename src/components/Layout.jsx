@@ -128,7 +128,7 @@ export default function Layout() {
 
       <aside className={`sidebar${sidebarOpen?' open':''}`}>
         <div className="logo" style={{padding:'14px 16px',textAlign:'center'}}>
-          <img src="/logo.png" alt="CEI Pilates Reformer" style={{width:'100%',maxWidth:110}}/>
+          <img src="/logo.png" alt="CEI Pilates Reformer" style={{width:'100%',maxWidth:160}}/>
         </div>
         <nav>
           {pages.map(p => (
