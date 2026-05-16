@@ -61,7 +61,7 @@ export default function Finanzas() {
       supabase.from('liquidaciones').select('*, instructores(nombre,apellido)').gte('periodo_inicio',inicio).lte('periodo_fin',fin),
       supabase.from('configuracion').select('*').eq('id',1).maybeSingle(),
       supabase.from('packs').select('*, alumnos(nombre,apellido)').order('created_at',{ascending:false}),
-      supabase.from('alumnos').select('id,nombre,apellido').eq('activo',true).order('apellido'),
+      supabase.from('alumnos').select('id,nombre,apellido,plan,clases_semana').eq('activo',true).order('apellido'),
     ])
 
     const porDia = {}
@@ -212,7 +212,18 @@ export default function Finanzas() {
       </div>
 
       {/* ===== INGRESOS ===== */}
-      {tab==='ingresos' && (
+      {tab==='ingresos' && (()=>{
+        // Facturación proyectada: precio por plan × alumnos
+        const proyectados = alumnos.map(a => {
+          let precio = 0
+          if (a.plan==='mensual')  precio = Number(config[`precio_mensual_${a.clases_semana||2}`]||0)
+          else if (a.plan==='pack')    precio = Number(config.precio_prepago||0)
+          else if (a.plan==='sueltas') precio = Number(config.precio_sueltas||0)
+          return { ...a, precioEsperado: precio }
+        })
+        const totalProyectado = proyectados.reduce((s,a)=>s+a.precioEsperado,0)
+        const diferencia = resumenMes.total - totalProyectado
+        return (
         <>
           <div style={{marginBottom:14,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
             <label style={{fontSize:12,color:'var(--sl-m)'}}>Mes:</label>
@@ -221,10 +232,58 @@ export default function Finanzas() {
             </select>
           </div>
           <div className="stats" style={{gridTemplateColumns:'repeat(2,1fr)',marginBottom:16}}>
-            <div className="sc" style={{'--acc':'var(--teal)'}}><div className="sc-lbl">Total del mes</div><div className="sc-val" style={{fontSize:22}}>${Math.round(resumenMes.total).toLocaleString('es-AR')}</div></div>
+            <div className="sc" style={{'--acc':'var(--teal)'}}><div className="sc-lbl">Total cobrado</div><div className="sc-val" style={{fontSize:22}}>${Math.round(resumenMes.total).toLocaleString('es-AR')}</div></div>
             <div className="sc" style={{'--acc':'var(--blue)'}}><div className="sc-lbl">Efectivo</div><div className="sc-val" style={{fontSize:22}}>${Math.round(resumenMes.efectivo).toLocaleString('es-AR')}</div></div>
             <div className="sc" style={{'--acc':'var(--teal)'}}><div className="sc-lbl">Mercado Pago</div><div className="sc-val" style={{fontSize:22}}>${Math.round(resumenMes.mp).toLocaleString('es-AR')}</div></div>
             <div className="sc" style={{'--acc':'var(--purple)'}}><div className="sc-lbl">Transferencia</div><div className="sc-val" style={{fontSize:22}}>${Math.round(resumenMes.transf).toLocaleString('es-AR')}</div></div>
+          </div>
+
+          {/* Panel facturación proyectada */}
+          <div className="panel" style={{marginBottom:16}}>
+            <div className="ph"><span className="ph-title">Facturación proyectada del mes</span></div>
+            <div style={{padding:'14px 16px'}}>
+              {totalProyectado===0
+                ? <div className="empty" style={{padding:'8px 0'}}>Configurá los precios por plan en la pestaña Configuración para ver la proyección.</div>
+                : <>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:16}}>
+                    <div style={{background:'var(--sl-l)',borderRadius:10,padding:'12px 14px'}}>
+                      <div style={{fontSize:11,color:'var(--sl-m)',marginBottom:4}}>Proyectado</div>
+                      <div style={{fontSize:20,fontWeight:700,fontFamily:'var(--font-num)',color:'var(--mg)'}}>${Math.round(totalProyectado).toLocaleString('es-AR')}</div>
+                    </div>
+                    <div style={{background:'var(--sl-l)',borderRadius:10,padding:'12px 14px'}}>
+                      <div style={{fontSize:11,color:'var(--sl-m)',marginBottom:4}}>Cobrado</div>
+                      <div style={{fontSize:20,fontWeight:700,fontFamily:'var(--font-num)',color:'#2D7A5A'}}>${Math.round(resumenMes.total).toLocaleString('es-AR')}</div>
+                    </div>
+                    <div style={{background:diferencia<0?'#FDECEA':'#E4F4EE',borderRadius:10,padding:'12px 14px'}}>
+                      <div style={{fontSize:11,color:'var(--sl-m)',marginBottom:4}}>{diferencia<0?'Pendiente de cobrar':'Diferencia'}</div>
+                      <div style={{fontSize:20,fontWeight:700,fontFamily:'var(--font-num)',color:diferencia<0?'#B03030':'#2D7A5A'}}>{diferencia<0?'-':''}${Math.abs(Math.round(diferencia)).toLocaleString('es-AR')}</div>
+                    </div>
+                  </div>
+                  <div style={{fontSize:11,fontWeight:600,color:'var(--sl-m)',textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:8}}>Detalle por alumno</div>
+                  <div className="tbl-wrap">
+                    <table className="tbl">
+                      <thead><tr><th>Alumno</th><th>Plan</th><th>Clases/sem</th><th>Precio esperado</th></tr></thead>
+                      <tbody>
+                        {proyectados.map(a=>(
+                          <tr key={a.id}>
+                            <td style={{fontWeight:500,whiteSpace:'nowrap'}}>{a.nombre} {a.apellido}</td>
+                            <td style={{whiteSpace:'nowrap'}}>{a.plan==='mensual'?'Plan mensual':a.plan==='pack'?'Prepago':'Clases sueltas'}</td>
+                            <td style={{textAlign:'center',fontFamily:'var(--font-num)'}}>{a.plan==='mensual'?a.clases_semana||2:'—'}</td>
+                            <td style={{fontFamily:'var(--font-num)',fontWeight:500,color:a.precioEsperado===0?'#B03030':'var(--mg)'}}>
+                              {a.precioEsperado===0?<span style={{fontSize:11,color:'#B03030'}}>Sin precio</span>:`$${a.precioEsperado.toLocaleString('es-AR')}`}
+                            </td>
+                          </tr>
+                        ))}
+                        <tr style={{background:'var(--sl-l)'}}>
+                          <td colSpan={3} style={{fontWeight:600}}>Total proyectado</td>
+                          <td style={{fontWeight:700,fontFamily:'var(--font-num)',color:'var(--mg)'}}>${Math.round(totalProyectado).toLocaleString('es-AR')}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              }
+            </div>
           </div>
           <div className="grid2">
             <div className="panel">
@@ -292,7 +351,8 @@ export default function Finanzas() {
             </div>
           </div>
         </>
-      )}
+        )
+      })()}
 
       {/* ===== PAGO INSTRUCTORES ===== */}
       {tab==='instructores' && (
@@ -415,17 +475,22 @@ export default function Finanzas() {
               ))}
             </div>
 
-            <div className="form-row2">
-              <div className="form-row" style={{marginBottom:0}}>
-                <label className="form-lbl">Prepago</label>
-                <input className="form-inp" type="number" value={config.precio_prepago||0} onChange={e=>setConfig(c=>({...c,precio_prepago:e.target.value}))} placeholder="0"/>
-              </div>
-              <div className="form-row" style={{marginBottom:0}}>
-                <label className="form-lbl">Clases sueltas</label>
+            <div className="form-row" style={{marginBottom:12}}>
+              <label className="form-lbl">Prepago (precio del pack)</label>
+              <input className="form-inp" type="number" value={config.precio_prepago||0} onChange={e=>setConfig(c=>({...c,precio_prepago:e.target.value}))} placeholder="0"/>
+            </div>
+
+            <div style={{fontSize:11,color:'var(--sl-m)',marginBottom:6}}>Clases sueltas — precio por clase individual</div>
+            <div style={{background:'var(--sl-l)',borderRadius:10,padding:'12px 14px',marginBottom:12,display:'flex',alignItems:'center',gap:14}}>
+              <div style={{flex:1}}>
+                <label className="form-lbl">Precio por clase suelta</label>
                 <input className="form-inp" type="number" value={config.precio_sueltas||0} onChange={e=>setConfig(c=>({...c,precio_sueltas:e.target.value}))} placeholder="0"/>
               </div>
+              <div style={{fontSize:12,color:'var(--sl-m)',lineHeight:1.4,maxWidth:180}}>
+                Este valor se usa para proyectar el ingreso de los alumnos con plan "Clases sueltas".
+              </div>
             </div>
-            <div style={{fontSize:11,color:'var(--sl-m)',marginTop:8,marginBottom:16}}>Estos precios se usan en el reporte de Facturación proyectada.</div>
+            <div style={{fontSize:11,color:'var(--sl-m)',marginBottom:16}}>Estos precios se usan en el reporte de Facturación proyectada.</div>
 
             {configOk && <div style={{fontSize:12,color:'#2D7A5A',background:'#E4F4EE',padding:'8px 12px',borderRadius:8,marginBottom:12}}>✓ Configuración guardada</div>}
             <button className="btn-pri" onClick={guardarConfig} disabled={savingConfig}>{savingConfig?'Guardando…':'Guardar configuración'}</button>
