@@ -39,6 +39,21 @@ export default function Finanzas() {
     fecha_inicio:'', fecha_vencimiento:'', alerta_clases_restantes:2
   })
 
+  const CATEGORIAS_EGRESO = [
+    { value:'sueldo',          label:'Sueldos' },
+    { value:'impuesto',        label:'Impuestos' },
+    { value:'servicio',        label:'Servicios' },
+    { value:'gasto_operativo', label:'Gastos operativos' },
+    { value:'mantenimiento',   label:'Mantenimiento' },
+    { value:'otro',            label:'Otro' },
+  ]
+  const emptyEgreso = { id:null, fecha:format(new Date(),'yyyy-MM-dd'), concepto:'', categoria:'gasto_operativo', monto:'', medio:'transferencia', notas:'' }
+  const [egresos, setEgresos]           = useState([])
+  const [totalEgresos, setTotalEgresos] = useState(0)
+  const [modalEgreso, setModalEgreso]   = useState(false)
+  const [egresoForm, setEgresoForm]     = useState(emptyEgreso)
+  const [savingEgreso, setSavingEgreso] = useState(false)
+
   useEffect(() => { fetchAll() }, [mes])
 
   async function fetchAll() {
@@ -102,6 +117,11 @@ export default function Finanzas() {
     })
     setPacks(packsData||[])
     setAlumnos(alumnosData||[])
+
+    const { data: egresosData } = await supabase.from('egresos').select('*').gte('fecha',inicio).lte('fecha',fin).order('fecha',{ascending:false})
+    setEgresos(egresosData||[])
+    setTotalEgresos((egresosData||[]).reduce((s,e)=>s+Number(e.monto||0),0))
+
     setLoading(false)
   }
 
@@ -195,6 +215,23 @@ export default function Finanzas() {
     fetchAll()
   }
 
+  async function guardarEgreso() {
+    if (!egresoForm.concepto || !egresoForm.monto) return
+    setSavingEgreso(true)
+    const payload = { fecha:egresoForm.fecha, concepto:egresoForm.concepto, categoria:egresoForm.categoria, monto:Number(egresoForm.monto), medio:egresoForm.medio, notas:egresoForm.notas||null }
+    if (egresoForm.id) {
+      await supabase.from('egresos').update(payload).eq('id',egresoForm.id)
+    } else {
+      await supabase.from('egresos').insert(payload)
+    }
+    setSavingEgreso(false); setModalEgreso(false); fetchAll()
+  }
+
+  async function eliminarEgreso(id) {
+    if (!confirm('¿Eliminar este egreso?')) return
+    await supabase.from('egresos').delete().eq('id',id); fetchAll()
+  }
+
   const meses = Array.from({length:12},(_,i)=>{
     const d=new Date(); d.setMonth(d.getMonth()-i); return format(d,'yyyy-MM')
   })
@@ -208,7 +245,7 @@ export default function Finanzas() {
       </div>
 
       <div className="tabs">
-        {[['ingresos','Ingresos'],['instructores','Pago instructores'],['packs','Packs prepago'],['config','Configuración']].map(([id,label])=>(
+        {[['ingresos','Ingresos'],['egresos','Egresos'],['instructores','Pago instructores'],['packs','Packs prepago'],['config','Configuración']].map(([id,label])=>(
           <div key={id} className={`tab${tab===id?' active':''}`} onClick={() => setTab(id)}>{label}</div>
         ))}
       </div>
@@ -234,11 +271,25 @@ export default function Finanzas() {
               {meses.map(m=><option key={m} value={m}>{format(parseISO(m+'-01'),'MMMM yyyy',{locale:es})}</option>)}
             </select>
           </div>
-          <div className="stats" style={{gridTemplateColumns:'repeat(2,1fr)',marginBottom:16}}>
+          <div className="stats" style={{gridTemplateColumns:'repeat(2,1fr)',marginBottom:12}}>
             <div className="sc" style={{'--acc':'var(--teal)'}}><div className="sc-lbl">Total cobrado</div><div className="sc-val" style={{fontSize:22}}>${Math.round(resumenMes.total).toLocaleString('es-AR')}</div></div>
             <div className="sc" style={{'--acc':'var(--blue)'}}><div className="sc-lbl">Efectivo</div><div className="sc-val" style={{fontSize:22}}>${Math.round(resumenMes.efectivo).toLocaleString('es-AR')}</div></div>
             <div className="sc" style={{'--acc':'var(--teal)'}}><div className="sc-lbl">Mercado Pago</div><div className="sc-val" style={{fontSize:22}}>${Math.round(resumenMes.mp).toLocaleString('es-AR')}</div></div>
             <div className="sc" style={{'--acc':'var(--purple)'}}><div className="sc-lbl">Transferencia</div><div className="sc-val" style={{fontSize:22}}>${Math.round(resumenMes.transf).toLocaleString('es-AR')}</div></div>
+          </div>
+          {/* Resultado del mes */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:16}}>
+            <div style={{background:'var(--sl-l)',borderRadius:10,padding:'12px 14px'}}>
+              <div style={{fontSize:11,color:'var(--sl-m)',marginBottom:4}}>Egresos del mes</div>
+              <div style={{fontSize:18,fontWeight:700,fontFamily:'var(--font-num)',color:'#B03030'}}>${Math.round(totalEgresos).toLocaleString('es-AR')}</div>
+            </div>
+            <div style={{background: (resumenMes.total-totalEgresos)>=0?'#E4F4EE':'#FDECEA',borderRadius:10,padding:'12px 14px',gridColumn:'span 2'}}>
+              <div style={{fontSize:11,color:'var(--sl-m)',marginBottom:4}}>Resultado neto</div>
+              <div style={{fontSize:22,fontWeight:700,fontFamily:'var(--font-num)',color:(resumenMes.total-totalEgresos)>=0?'#2D7A5A':'#B03030'}}>
+                {(resumenMes.total-totalEgresos)>=0?'':'-'}${Math.abs(Math.round(resumenMes.total-totalEgresos)).toLocaleString('es-AR')}
+              </div>
+              <div style={{fontSize:10,color:'var(--sl-m)',marginTop:2}}>Ingresos − Egresos</div>
+            </div>
           </div>
 
           {/* Panel facturación proyectada */}
@@ -347,6 +398,83 @@ export default function Finanzas() {
                       <td style={{fontWeight:500}}>${Math.round(resumenMes.mp).toLocaleString('es-AR')}</td>
                       <td style={{fontWeight:500}}>${Math.round(resumenMes.transf).toLocaleString('es-AR')}</td>
                       <td style={{fontWeight:700,color:'var(--mg)',fontFamily:'var(--font-num)'}}>${Math.round(resumenMes.total).toLocaleString('es-AR')}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+        )
+      })()}
+
+      {/* ===== EGRESOS ===== */}
+      {tab==='egresos' && (()=>{
+        const porCategoria = CATEGORIAS_EGRESO.map(cat => ({
+          ...cat,
+          total: egresos.filter(e=>e.categoria===cat.value).reduce((s,e)=>s+Number(e.monto||0),0),
+          items: egresos.filter(e=>e.categoria===cat.value).length,
+        })).filter(c=>c.total>0)
+        return (
+        <>
+          <div style={{marginBottom:14,display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:10}}>
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              <label style={{fontSize:12,color:'var(--sl-m)'}}>Mes:</label>
+              <select className="form-inp" style={{width:180}} value={mes} onChange={e=>setMes(e.target.value)}>
+                {meses.map(m=><option key={m} value={m}>{format(parseISO(m+'-01'),'MMMM yyyy',{locale:es})}</option>)}
+              </select>
+            </div>
+            <button className="btn-pri" onClick={()=>{ setEgresoForm({...emptyEgreso}); setModalEgreso(true) }}>+ Nuevo egreso</button>
+          </div>
+
+          {/* Resumen por categoría */}
+          {porCategoria.length > 0 && (
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:10,marginBottom:16}}>
+              {porCategoria.map(c=>(
+                <div key={c.value} style={{background:'var(--sl-l)',borderRadius:10,padding:'12px 14px'}}>
+                  <div style={{fontSize:11,color:'var(--sl-m)',marginBottom:4}}>{c.label}</div>
+                  <div style={{fontSize:16,fontWeight:700,fontFamily:'var(--font-num)',color:'#B03030'}}>${Math.round(c.total).toLocaleString('es-AR')}</div>
+                  <div style={{fontSize:10,color:'var(--sl-m)',marginTop:2}}>{c.items} {c.items===1?'egreso':'egresos'}</div>
+                </div>
+              ))}
+              <div style={{background:'#FDECEA',borderRadius:10,padding:'12px 14px'}}>
+                <div style={{fontSize:11,color:'var(--sl-m)',marginBottom:4}}>Total egresos</div>
+                <div style={{fontSize:16,fontWeight:700,fontFamily:'var(--font-num)',color:'#B03030'}}>${Math.round(totalEgresos).toLocaleString('es-AR')}</div>
+                <div style={{fontSize:10,color:'#B03030',marginTop:2,fontWeight:600}}>Resultado: {(resumenMes.total-totalEgresos)>=0?'+':''}{Math.round(resumenMes.total-totalEgresos).toLocaleString('es-AR')}</div>
+              </div>
+            </div>
+          )}
+
+          <div className="panel">
+            <div className="ph"><span className="ph-title">Egresos — {format(parseISO(mes+'-01'),'MMMM yyyy',{locale:es})}</span></div>
+            <div className="tbl-wrap">
+              <table className="tbl" style={{minWidth:560}}>
+                <thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th>Medio</th><th style={{textAlign:'right'}}>Monto</th><th></th></tr></thead>
+                <tbody>
+                  {egresos.length===0&&<tr><td colSpan={6} className="empty">Sin egresos este mes</td></tr>}
+                  {egresos.map(e=>(
+                    <tr key={e.id}>
+                      <td style={{whiteSpace:'nowrap',fontSize:12}}>{format(new Date(e.fecha+'T00:00:00'),'dd/MM/yy')}</td>
+                      <td>
+                        <div style={{fontWeight:500}}>{e.concepto}</div>
+                        {e.notas&&<div style={{fontSize:10,color:'var(--sl-m)'}}>{e.notas}</div>}
+                      </td>
+                      <td><span style={{fontSize:11,padding:'2px 8px',borderRadius:6,background:'var(--sl-l)',color:'var(--sl-m)',whiteSpace:'nowrap'}}>{CATEGORIAS_EGRESO.find(c=>c.value===e.categoria)?.label||e.categoria}</span></td>
+                      <td style={{fontSize:11,color:'var(--sl-m)',textTransform:'capitalize'}}>{e.medio}</td>
+                      <td style={{textAlign:'right',fontFamily:'var(--font-num)',fontWeight:600,color:'#B03030'}}>${Number(e.monto).toLocaleString('es-AR')}</td>
+                      <td>
+                        <div style={{display:'flex',gap:4}}>
+                          <button className="btn-sec" style={{fontSize:11,padding:'3px 7px'}} onClick={()=>{ setEgresoForm({id:e.id,fecha:e.fecha,concepto:e.concepto,categoria:e.categoria,monto:e.monto,medio:e.medio,notas:e.notas||''}); setModalEgreso(true) }}>Editar</button>
+                          <button className="btn-danger" style={{fontSize:11,padding:'3px 7px'}} onClick={()=>eliminarEgreso(e.id)}>×</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {egresos.length>0&&(
+                    <tr style={{background:'var(--sl-l)'}}>
+                      <td colSpan={4} style={{fontWeight:600,padding:'10px 14px'}}>Total</td>
+                      <td style={{textAlign:'right',fontWeight:700,fontFamily:'var(--font-num)',color:'#B03030',padding:'10px 14px'}}>${Math.round(totalEgresos).toLocaleString('es-AR')}</td>
+                      <td/>
                     </tr>
                   )}
                 </tbody>
@@ -501,6 +629,23 @@ export default function Finanzas() {
             <button className="btn-pri" onClick={guardarConfig} disabled={savingConfig}>{savingConfig?'Guardando…':'Guardar configuración'}</button>
           </div>
         </div>
+      )}
+
+      {/* MODAL: Egreso */}
+      {modalEgreso&&(
+        <Modal title={egresoForm.id?'Editar egreso':'Nuevo egreso'} onClose={()=>setModalEgreso(false)}
+          footer={<><button className="btn-sec" onClick={()=>setModalEgreso(false)}>Cancelar</button><button className="btn-pri" onClick={guardarEgreso} disabled={savingEgreso}>{savingEgreso?'Guardando…':'Guardar'}</button></>}>
+          <div className="form-row2">
+            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Fecha</label><input className="form-inp" type="date" value={egresoForm.fecha} onChange={e=>setEgresoForm(f=>({...f,fecha:e.target.value}))}/></div>
+            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Categoría</label><select className="form-inp" value={egresoForm.categoria} onChange={e=>setEgresoForm(f=>({...f,categoria:e.target.value}))}>{CATEGORIAS_EGRESO.map(c=><option key={c.value} value={c.value}>{c.label}</option>)}</select></div>
+          </div>
+          <div className="form-row" style={{marginTop:12}}><label className="form-lbl">Concepto</label><input className="form-inp" value={egresoForm.concepto} onChange={e=>setEgresoForm(f=>({...f,concepto:e.target.value}))} placeholder="Ej: Alquiler local, Sueldo María, AFIP..."/></div>
+          <div className="form-row2">
+            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Monto</label><input className="form-inp" type="number" value={egresoForm.monto} onChange={e=>setEgresoForm(f=>({...f,monto:e.target.value}))} placeholder="0"/></div>
+            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Medio de pago</label><select className="form-inp" value={egresoForm.medio} onChange={e=>setEgresoForm(f=>({...f,medio:e.target.value}))}><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option><option value="mercadopago">Mercado Pago</option></select></div>
+          </div>
+          <div className="form-row" style={{marginTop:12}}><label className="form-lbl">Notas (opcional)</label><textarea className="form-inp" value={egresoForm.notas} onChange={e=>setEgresoForm(f=>({...f,notas:e.target.value}))} placeholder="Detalles adicionales..."/></div>
+        </Modal>
       )}
 
       {/* MODAL: Tarifa */}
