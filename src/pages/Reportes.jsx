@@ -21,7 +21,7 @@ export default function Reportes() {
   const [alumnosReport, setAlumnosReport]   = useState([])
   const [cumplimiento, setCumplimiento]     = useState([])
   const [reporteInstructores, setReporteInstructores] = useState([])
-  const [facturacion, setFacturacion]       = useState({ alumnos:[], precios:{mensual:0,pack:0,sueltas:0}, total:0, porPlan:{} })
+  const [facturacion, setFacturacion]       = useState({ alumnos:[], total:0, porPlan:{} })
 
   useEffect(() => { fetchReporte() }, [mes, tab])
 
@@ -34,21 +34,23 @@ export default function Reportes() {
     if (tab === 'facturacion') {
       const [{ data: als }, { data: cfg }] = await Promise.all([
         supabase.from('alumnos').select('id,nombre,apellido,plan,nivel,clases_semana,instructores(nombre,apellido)').eq('activo',true).order('apellido'),
-        supabase.from('configuracion').select('precio_mensual,precio_prepago,precio_sueltas').eq('id',1).maybeSingle(),
+        supabase.from('configuracion').select('precio_mensual,precio_prepago,precio_sueltas,precio_individual,precio_mensual_1,precio_mensual_2,precio_mensual_3,precio_mensual_4,precio_mensual_5').eq('id',1).maybeSingle(),
       ])
-      const precios = {
-        mensual: Number(cfg?.precio_mensual||0),
-        pack:    Number(cfg?.precio_prepago||0),
-        sueltas: Number(cfg?.precio_sueltas||0),
-      }
-      const alumnosConMonto = (als||[]).map(a => ({ ...a, monto: precios[a.plan]||0 }))
+      const alumnosConMonto = (als||[]).map(a => {
+        let monto = 0
+        if (a.plan==='mensual')     monto = Number(cfg?.[`precio_mensual_${a.clases_semana||2}`]||0)
+        else if (a.plan==='pack')        monto = Number(cfg?.precio_prepago||0)
+        else if (a.plan==='sueltas')     monto = Number(cfg?.precio_sueltas||0)
+        else if (a.plan==='individual')  monto = Number(cfg?.precio_individual||0)
+        return { ...a, monto }
+      })
       const porPlan = {
         mensual: alumnosConMonto.filter(a=>a.plan==='mensual'),
         pack:    alumnosConMonto.filter(a=>a.plan==='pack'),
         sueltas: alumnosConMonto.filter(a=>a.plan==='sueltas'),
       }
       const total = alumnosConMonto.reduce((s,a)=>s+a.monto,0)
-      setFacturacion({ alumnos:alumnosConMonto, precios, total, porPlan })
+      setFacturacion({ alumnos:alumnosConMonto, total, porPlan })
     }
 
     if (tab === 'cumplimiento') {
@@ -163,9 +165,9 @@ export default function Reportes() {
       {loading ? <div className="loading">Cargando...</div> : <>
 
         {tab==='facturacion' && <>
-          {facturacion.precios.mensual===0&&facturacion.precios.pack===0&&facturacion.precios.sueltas===0&&(
+          {facturacion.total===0&&facturacion.alumnos.length>0&&(
             <div style={{padding:'12px 16px',background:'#FEF3E2',borderRadius:10,border:'1px solid #F0C060',fontSize:12,color:'#7A5010',marginBottom:16}}>
-              Los precios por plan estan en $0. Configuralos en Finanzas - Configuracion.
+              Los precios por plan están en $0. Configuralos en Finanzas → Configuración.
             </div>
           )}
           <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:12,marginBottom:16}}>

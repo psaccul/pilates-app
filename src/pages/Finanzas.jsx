@@ -25,7 +25,7 @@ export default function Finanzas() {
 
   const [config, setConfig]             = useState({
     cobro_dia_inicio:1, cobro_dia_fin:10, nombre_estudio:'Studio Pilates Reformer',
-    precio_mensual:0, precio_prepago:0, precio_sueltas:0,
+    precio_mensual:0, precio_prepago:0, precio_sueltas:0, precio_individual:0,
     precio_mensual_1:0, precio_mensual_2:0, precio_mensual_3:0, precio_mensual_4:0, precio_mensual_5:0,
   })
   const [savingConfig, setSavingConfig] = useState(false)
@@ -93,6 +93,7 @@ export default function Finanzas() {
       precio_mensual:    configData.precio_mensual    || 0,
       precio_prepago:    configData.precio_prepago    || 0,
       precio_sueltas:    configData.precio_sueltas    || 0,
+      precio_individual: configData.precio_individual || 0,
       precio_mensual_1:  configData.precio_mensual_1  || 0,
       precio_mensual_2:  configData.precio_mensual_2  || 0,
       precio_mensual_3:  configData.precio_mensual_3  || 0,
@@ -164,6 +165,7 @@ export default function Finanzas() {
       precio_mensual:    Number(config.precio_mensual||0),
       precio_prepago:    Number(config.precio_prepago||0),
       precio_sueltas:    Number(config.precio_sueltas||0),
+      precio_individual: Number(config.precio_individual||0),
       precio_mensual_1:  Number(config.precio_mensual_1||0),
       precio_mensual_2:  Number(config.precio_mensual_2||0),
       precio_mensual_3:  Number(config.precio_mensual_3||0),
@@ -216,9 +218,10 @@ export default function Finanzas() {
         // Facturación proyectada: precio por plan × alumnos
         const proyectados = alumnos.map(a => {
           let precio = 0
-          if (a.plan==='mensual')  precio = Number(config[`precio_mensual_${a.clases_semana||2}`]||0)
-          else if (a.plan==='pack')    precio = Number(config.precio_prepago||0)
-          else if (a.plan==='sueltas') precio = Number(config.precio_sueltas||0)
+          if (a.plan==='mensual')       precio = Number(config[`precio_mensual_${a.clases_semana||2}`]||0)
+          else if (a.plan==='pack')         precio = Number(config.precio_prepago||0)
+          else if (a.plan==='sueltas')      precio = Number(config.precio_sueltas||0)
+          else if (a.plan==='individual')   precio = Number(config.precio_individual||0)
           return { ...a, precioEsperado: precio }
         })
         const totalProyectado = proyectados.reduce((s,a)=>s+a.precioEsperado,0)
@@ -480,14 +483,16 @@ export default function Finanzas() {
               <input className="form-inp" type="number" value={config.precio_prepago||0} onChange={e=>setConfig(c=>({...c,precio_prepago:e.target.value}))} placeholder="0"/>
             </div>
 
-            <div style={{fontSize:11,color:'var(--sl-m)',marginBottom:6}}>Clases sueltas — precio por clase individual</div>
-            <div style={{background:'var(--sl-l)',borderRadius:10,padding:'12px 14px',marginBottom:12,display:'flex',alignItems:'center',gap:14}}>
-              <div style={{flex:1}}>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+              <div style={{background:'var(--sl-l)',borderRadius:10,padding:'12px 14px'}}>
+                <div style={{fontSize:11,color:'var(--sl-m)',marginBottom:6}}>Clases sueltas</div>
                 <label className="form-lbl">Precio por clase suelta</label>
                 <input className="form-inp" type="number" value={config.precio_sueltas||0} onChange={e=>setConfig(c=>({...c,precio_sueltas:e.target.value}))} placeholder="0"/>
               </div>
-              <div style={{fontSize:12,color:'var(--sl-m)',lineHeight:1.4,maxWidth:180}}>
-                Este valor se usa para proyectar el ingreso de los alumnos con plan "Clases sueltas".
+              <div style={{background:'var(--sl-l)',borderRadius:10,padding:'12px 14px'}}>
+                <div style={{fontSize:11,color:'var(--sl-m)',marginBottom:6}}>Clases individuales</div>
+                <label className="form-lbl">Precio por clase individual</label>
+                <input className="form-inp" type="number" value={config.precio_individual||0} onChange={e=>setConfig(c=>({...c,precio_individual:e.target.value}))} placeholder="0"/>
               </div>
             </div>
             <div style={{fontSize:11,color:'var(--sl-m)',marginBottom:16}}>Estos precios se usan en el reporte de Facturación proyectada.</div>
