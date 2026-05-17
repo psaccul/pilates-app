@@ -598,12 +598,16 @@ export default function Finanzas() {
 
             <div style={{fontSize:11,color:'var(--sl-m)',marginBottom:6}}>Plan mensual — según clases por semana</div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8,marginBottom:12}}>
-              {[1,2,3,4,5].map(n=>(
+              {[1,2,3,4].map(n=>(
                 <div key={n} className="form-row" style={{marginBottom:0}}>
                   <label className="form-lbl">{n} clase{n>1?'s':''}/sem</label>
                   <input className="form-inp" type="number" value={config[`precio_mensual_${n}`]||0} onChange={e=>setConfig(c=>({...c,[`precio_mensual_${n}`]:e.target.value}))} placeholder="0"/>
                 </div>
               ))}
+              <div className="form-row" style={{marginBottom:0}}>
+                <label className="form-lbl">Pase libre</label>
+                <input className="form-inp" type="number" value={config.precio_mensual_5||0} onChange={e=>setConfig(c=>({...c,precio_mensual_5:e.target.value}))} placeholder="0"/>
+              </div>
             </div>
 
             <div className="form-row" style={{marginBottom:12}}>
