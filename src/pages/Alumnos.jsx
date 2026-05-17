@@ -350,7 +350,7 @@ export default function Alumnos({ esAdmin }) {
           <div className="form-row"><label className="form-lbl">Fecha de nacimiento</label><input className="form-inp" type="date" value={form.fecha_nacimiento} onChange={set('fecha_nacimiento')}/></div>
           <div className="form-row2">
             <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Plan</label><select className="form-inp" value={form.plan} onChange={set('plan')}><option value="mensual">Plan mensual</option><option value="pack">Prepago</option><option value="sueltas">Clases sueltas</option></select></div>
-            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Clases por semana</label><select className="form-inp" value={form.clases_semana} onChange={set('clases_semana')}><option value={1}>1</option><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option></select></div>
+            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Clases por semana</label><select className="form-inp" value={form.clases_semana} onChange={set('clases_semana')}><option value={1}>1</option><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option><option value={5}>5</option></select></div>
           </div>
           <div className="form-row2" style={{marginTop:12}}>
             <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Nivel</label><select className="form-inp" value={form.nivel} onChange={set('nivel')}><option value="A">A</option><option value="B">B</option><option value="C">C</option></select></div>

@@ -74,8 +74,8 @@ export default function Dashboard({ setPage, esGerente }) {
         .select('*, instructores(nombre,apellido), asistencias(id,alumno_id,asistio,estado_asistencia,recuperacion,alumnos(nombre,apellido))')
         .eq('fecha', today).order('hora'),
       supabase.from('alumnos')
-        .select('*, instructores(nombre,apellido), pagos(pagado)')
-        .eq('activo', true).order('created_at',{ascending:false}).limit(5),
+        .select('id,nombre,apellido,plan,instructores(nombre,apellido), pagos(pagado)')
+        .eq('activo', true).order('apellido'),
       supabase.from('pagos').select('pagado,monto'),
       supabase.from('asistencias').select('asistio').eq('asistio', true),
       supabase.from('packs').select('*, alumnos(nombre,apellido)').eq('activo', true),
@@ -88,7 +88,7 @@ export default function Dashboard({ setPage, esGerente }) {
     const sinPagoCount = (todosAlumnosSimple||[]).filter(a => (a.pagos||[]).length === 0).length
     setStats({
       clases:     clasesHoy?.length || 0,
-      alumnos:    (alumnosData||[]).length,
+      alumnos:    (todosAlumnosSimple||[]).length,
       asistencia: (asistData||[]).length,
       pendientes: (pagosData||[]).filter(p=>!p.pagado).reduce((s,p)=>s+Number(p.monto||0),0),
       sinPago:    sinPagoCount,
@@ -308,25 +308,29 @@ export default function Dashboard({ setPage, esGerente }) {
 
         <div className="panel">
           <div className="ph">
-            <span className="ph-title">Alumnos recientes</span>
+            <span className="ph-title">Alumnos con deuda</span>
             <button className="ph-link" onClick={() => setPage('alumnos')}>Ver todos →</button>
           </div>
-          {alumnos.map(a => {
-            const ep = estadoPago(a)
-            return (
-              <div key={a.id} className="ai"
-                onClick={() => window.dispatchEvent(new CustomEvent('open-ficha-alumno',{detail:a.id}))}>
-                <Avatar nombre={a.nombre} apellido={a.apellido} />
-                <div>
-                  <div className="an">{a.nombre} {a.apellido}</div>
-                  <div className="ap">{a.plan==='mensual'?'Plan mensual':a.plan==='pack'?'Pack prepago':'Clases sueltas'}</div>
+          {(() => {
+            const conDeuda = alumnos.filter(a => (a.pagos||[]).some(p => !p.pagado) || (a.pagos||[]).length === 0)
+            if (conDeuda.length === 0) return <div className="empty" style={{color:'#2D7A5A'}}>¡Todo al día!</div>
+            return conDeuda.map(a => {
+              const ep = estadoPago(a)
+              return (
+                <div key={a.id} className="ai"
+                  onClick={() => window.dispatchEvent(new CustomEvent('open-ficha-alumno',{detail:a.id}))}>
+                  <Avatar nombre={a.nombre} apellido={a.apellido} />
+                  <div>
+                    <div className="an">{a.nombre} {a.apellido}</div>
+                    <div className="ap">{a.plan==='mensual'?'Plan mensual':a.plan==='pack'?'Pack prepago':'Clases sueltas'}</div>
+                  </div>
+                  <span className={`est ${ep==='pendiente'?'e-pe':'e-ve'}`} style={{marginLeft:'auto'}}>
+                    {ep==='pendiente'?'Pendiente':'Sin pago'}
+                  </span>
                 </div>
-                <span className={`est ${ep==='ok'?'e-ok':ep==='pendiente'?'e-pe':'e-ve'}`} style={{marginLeft:'auto'}}>
-                  {ep==='ok'?'Al día':ep==='pendiente'?'Pendiente':'Sin pago'}
-                </span>
-              </div>
-            )
-          })}
+              )
+            })
+          })()}
         </div>
       </div>
 
