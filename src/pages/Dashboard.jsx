@@ -76,7 +76,7 @@ export default function Dashboard({ setPage, esGerente }) {
       supabase.from('alumnos')
         .select('id,nombre,apellido,plan,instructores(nombre,apellido), pagos(pagado)')
         .eq('activo', true).order('apellido'),
-      supabase.from('pagos').select('pagado,monto'),
+      supabase.from('pagos').select('pagado,monto,periodo,alumnos(plan,clases_semana)').eq('pagado',false).eq('periodo', format(new Date(),'yyyy-MM')),
       supabase.from('asistencias').select('asistio').eq('asistio', true),
       supabase.from('packs').select('*, alumnos(nombre,apellido)').eq('activo', true),
       supabase.from('configuracion').select('*').eq('id', 1).maybeSingle(),
@@ -86,11 +86,22 @@ export default function Dashboard({ setPage, esGerente }) {
     setClases(clasesHoy || [])
     setAlumnos(alumnosData || [])
     const sinPagoCount = (todosAlumnosSimple||[]).filter(a => (a.pagos||[]).length === 0).length
+    const cfg = config
+    const totalPendiente = (pagosData||[]).reduce((s, p) => {
+      if (p.monto) return s + Number(p.monto)
+      const a = p.alumnos
+      let precio = 0
+      if (a?.plan==='mensual')         precio = Number(cfg?.[`precio_mensual_${a.clases_semana||2}`] || 0)
+      else if (a?.plan==='pack')       precio = Number(cfg?.precio_prepago   || 0)
+      else if (a?.plan==='sueltas')    precio = Number(cfg?.precio_sueltas   || 0)
+      else if (a?.plan==='individual') precio = Number(cfg?.precio_individual|| 0)
+      return s + precio
+    }, 0)
     setStats({
       clases:     clasesHoy?.length || 0,
       alumnos:    (todosAlumnosSimple||[]).length,
       asistencia: (asistData||[]).length,
-      pendientes: (pagosData||[]).filter(p=>!p.pagado).reduce((s,p)=>s+Number(p.monto||0),0),
+      pendientes: totalPendiente,
       sinPago:    sinPagoCount,
     })
 
