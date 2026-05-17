@@ -597,7 +597,7 @@ export default function Finanzas() {
             <div style={{fontSize:12,color:'var(--sl-m)',marginBottom:8,fontWeight:500}}>Precios por plan</div>
 
             <div style={{fontSize:11,color:'var(--sl-m)',marginBottom:6}}>Plan mensual — según clases por semana</div>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8,marginBottom:12}}>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:8,marginBottom:12,alignItems:'end'}}>
               {[1,2,3,4].map(n=>(
                 <div key={n} className="form-row" style={{marginBottom:0}}>
                   <label className="form-lbl">{n} clase{n>1?'s':''}/sem</label>
