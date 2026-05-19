@@ -9,6 +9,26 @@ const DIAS = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Doming
 const emptyForm = { nombre:'', apellido:'', telefono:'', plan:'mensual', instructor_id:'', notas:'', nivel:'A', clases_semana:2, fecha_nacimiento:'' }
 const emptyHorario = { dia_semana:'1', hora:'08:00', instructor_id:'', sala:'Sala A', nombre_clase:'' }
 
+function normStr(s) {
+  return (s||'').toLowerCase().normalize('NFD').replace(/\p{Mn}/gu,'').trim()
+}
+
+function buscarPosiblesDuplicados(form, alumnos) {
+  const nombre   = normStr(form.nombre)
+  const apellido = normStr(form.apellido)
+  const tel      = (form.telefono||'').replace(/\D/g,'')
+  return alumnos.filter(a => {
+    if (a.id === form.id) return false
+    const aN  = normStr(a.nombre)
+    const aAp = normStr(a.apellido)
+    const aTel = (a.telefono||'').replace(/\D/g,'')
+    const mismosNombres = apellido.length >= 2 && nombre.length >= 2 && aAp === apellido &&
+      (aN === nombre || normStr(a.nombre).startsWith(nombre.slice(0,3)) || nombre.startsWith(normStr(a.nombre).slice(0,3)))
+    const mismoTel = tel.length >= 8 && aTel.length >= 8 && aTel === tel
+    return mismosNombres || mismoTel
+  })
+}
+
 export default function Alumnos({ esAdmin }) {
   const [alumnos, setAlumnos]           = useState([])
   const [instructores, setInstructores] = useState([])
@@ -16,10 +36,7 @@ export default function Alumnos({ esAdmin }) {
   const [modal, setModal]               = useState(false)
   const [historial, setHistorial]       = useState(null)
   const [histData, setHistData]         = useState([])
-  const [horariosModal, setHorariosModal] = useState(null)
-  const [horarios, setHorarios]         = useState([])
   const [form, setForm]                 = useState(emptyForm)
-  const [horarioForm, setHorarioForm]   = useState(emptyHorario)
   const [saving, setSaving]             = useState(false)
   const [search, setSearch]             = useState('')
   const [formHorarios, setFormHorarios]       = useState([])
@@ -29,6 +46,7 @@ export default function Alumnos({ esAdmin }) {
   const [replicarDesde, setReplicarDesde]     = useState(format(new Date(),'yyyy-MM-dd'))
   const [replicando, setReplicando]           = useState(false)
   const [replicarOk, setReplicarOk]           = useState(false)
+  const [auditModal, setAuditModal]           = useState(false)
 
   useEffect(() => {
     fetchData()
@@ -60,6 +78,7 @@ export default function Alumnos({ esAdmin }) {
     } : emptyForm)
     setFormHorarioNew({ ...emptyHorario, instructor_id: alumno?.instructor_id||'' })
     setHorariosToDelete([])
+    setReplicarOk(false)
     if (alumno) {
       const { data } = await supabase.from('horarios_alumno').select('*').eq('alumno_id',alumno.id).eq('activo',true).order('dia_semana').order('hora')
       setFormHorarios(data||[])
@@ -134,47 +153,27 @@ export default function Alumnos({ esAdmin }) {
     await supabase.from('alumnos').update({ activo:false }).eq('id',id); fetchData()
   }
 
-  async function abrirHorarios(alumno) {
-    setHorariosModal(alumno); setReplicarOk(false)
-    const { data } = await supabase.from('horarios_alumno').select('*, instructores(nombre,apellido)').eq('alumno_id',alumno.id).eq('activo',true).order('dia_semana').order('hora')
-    setHorarios(data||[])
-    setHorarioForm({ ...emptyHorario, instructor_id: alumno.instructor_id||'' })
-  }
-
-  async function agregarHorario() {
-    if (!horarioForm.hora || !horarioForm.nombre_clase) return
-    setSaving(true)
-    await supabase.from('horarios_alumno').insert({ alumno_id:horariosModal.id, dia_semana:Number(horarioForm.dia_semana), hora:horarioForm.hora, instructor_id:horarioForm.instructor_id||null, sala:horarioForm.sala, nombre_clase:horarioForm.nombre_clase, activo:true })
-    const { data } = await supabase.from('horarios_alumno').select('*, instructores(nombre,apellido)').eq('alumno_id',horariosModal.id).eq('activo',true).order('dia_semana').order('hora')
-    setHorarios(data||[]); setSaving(false)
-  }
-
-  async function eliminarHorario(id) {
-    await supabase.from('horarios_alumno').update({ activo:false }).eq('id',id)
-    setHorarios(prev => prev.filter(h=>h.id!==id))
-  }
-
-  async function replicarClases() {
-    if (!horariosModal || horarios.length===0) return
+  async function generarClasesDesdeModal() {
+    if (!form.id || formHorarios.length === 0) return
     setReplicando(true); setReplicarOk(false)
-    const desde = new Date(replicarDesde+'T00:00:00')
-    for (let semana=0; semana<replicarSemanas; semana++) {
-      for (const h of horarios) {
+    const desde = new Date(replicarDesde + 'T00:00:00')
+    for (let semana = 0; semana < replicarSemanas; semana++) {
+      for (const h of formHorarios) {
         const base = addWeeks(desde, semana)
-        const inicioSemana = startOfWeek(base,{weekStartsOn:1})
-        const fechaDia = addDays(inicioSemana, h.dia_semana)
-        if (fechaDia < desde) continue  // evitar generar clases antes de la fecha de inicio
-        const fechaStr = format(fechaDia,'yyyy-MM-dd')
-        let query = supabase.from('clases').select('id').eq('fecha',fechaStr).eq('hora',h.hora)
-        if (h.instructor_id) query = query.eq('instructor_id', h.instructor_id)
-        else query = query.is('instructor_id', null)
-        const { data: existe } = await query.maybeSingle()
+        const inicioSemana = startOfWeek(base, { weekStartsOn: 1 })
+        const fechaDia = addDays(inicioSemana, Number(h.dia_semana))
+        if (fechaDia < desde) continue
+        const fechaStr = format(fechaDia, 'yyyy-MM-dd')
+        let q = supabase.from('clases').select('id').eq('fecha', fechaStr).eq('hora', h.hora)
+        if (h.instructor_id) q = q.eq('instructor_id', h.instructor_id)
+        else q = q.is('instructor_id', null)
+        const { data: existe } = await q.maybeSingle()
         let claseId
         if (!existe) {
-          const { data: nueva } = await supabase.from('clases').insert({ nombre:h.nombre_clase, tipo:'grupal', instructor_id:h.instructor_id||null, fecha:fechaStr, hora:h.hora, sala:h.sala, capacidad:4 }).select().single()
+          const { data: nueva } = await supabase.from('clases').insert({ nombre: h.nombre_clase, tipo: 'grupal', instructor_id: h.instructor_id || null, fecha: fechaStr, hora: h.hora, sala: h.sala || 'Sala A', capacidad: 4 }).select().single()
           claseId = nueva?.id
         } else { claseId = existe.id }
-        if (claseId) await supabase.from('asistencias').upsert({ clase_id:claseId, alumno_id:horariosModal.id, asistio:false, recuperacion:false, estado_asistencia:'pendiente' },{ onConflict:'clase_id,alumno_id' })
+        if (claseId) await supabase.from('asistencias').upsert({ clase_id: claseId, alumno_id: form.id, asistio: false, recuperacion: false, estado_asistencia: 'pendiente' }, { onConflict: 'clase_id,alumno_id' })
       }
     }
     setReplicando(false); setReplicarOk(true)
@@ -233,7 +232,6 @@ export default function Alumnos({ esAdmin }) {
   const cumpleSemanaList = alumnos.filter(a=>!cumpleHoy(a)&&cumpleEstaSemana(a))
 
   const set   = k => e => setForm(f=>({...f,[k]:e.target.value}))
-  const setH  = k => e => setHorarioForm(f=>({...f,[k]:e.target.value}))
   const setHN = k => e => setFormHorarioNew(f=>({...f,[k]:e.target.value}))
 
   function agregarHorarioEnModal() {
@@ -271,7 +269,10 @@ export default function Alumnos({ esAdmin }) {
       </div>
 
       <div className="panel">
-        <div className="ph"><span className="ph-title">Alumnos activos ({filtered.length})</span></div>
+        <div className="ph">
+          <span className="ph-title">Alumnos activos ({filtered.length})</span>
+          {esAdmin && <button className="btn-sec" style={{fontSize:11,padding:'4px 10px'}} onClick={()=>setAuditModal(true)}>Buscar duplicados</button>}
+        </div>
         {loading ? <div className="loading">Cargando…</div> : (
           <div className="tbl-wrap">
             <table className="tbl">
@@ -323,7 +324,6 @@ export default function Alumnos({ esAdmin }) {
                       </td>
                       <td>
                         <div style={{display:'flex',gap:4,whiteSpace:'nowrap'}}>
-                          {esAdmin&&<button className="btn-sec" style={{fontSize:11,padding:'4px 7px'}} onClick={()=>abrirHorarios(a)}>Horarios</button>}
                           <button className="btn-sec" style={{fontSize:11,padding:'4px 7px'}} onClick={()=>verHistorial(a)}>Historial</button>
                           <button className="btn-sec" style={{fontSize:11,padding:'4px 7px'}} onClick={()=>openModal(a)}>Editar</button>
                           {esAdmin&&<button className="btn-danger" style={{fontSize:11,padding:'4px 7px'}} onClick={()=>handleDelete(a.id)}>x</button>}
@@ -339,9 +339,32 @@ export default function Alumnos({ esAdmin }) {
       </div>
 
       {/* MODAL nuevo/editar */}
-      {modal&&(
+      {modal&&(()=>{
+        const posiblesDups = (form.nombre.length>=2 && form.apellido.length>=2) || form.telefono.length>=8
+          ? buscarPosiblesDuplicados(form, alumnos) : []
+        return (
         <Modal title={form.id?'Editar alumno':'Nuevo alumno'} onClose={()=>setModal(false)}
           footer={<><button className="btn-sec" onClick={()=>setModal(false)}>Cancelar</button><button className="btn-pri" onClick={handleSave} disabled={saving}>{saving?'Guardando…':'Guardar alumno'}</button></>}>
+
+          {posiblesDups.length > 0 && (
+            <div style={{background:'#FEF3E2',border:'1px solid #F0C060',borderRadius:10,padding:'10px 14px',marginBottom:14}}>
+              <div style={{fontSize:12,fontWeight:600,color:'#7A5010',marginBottom:8}}>Posible duplicado detectado</div>
+              {posiblesDups.map(d=>(
+                <div key={d.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,background:'#FFF8EC',borderRadius:7,padding:'7px 10px',marginBottom:6}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8}}>
+                    <Avatar nombre={d.nombre} apellido={d.apellido} size={24} fontSize={9}/>
+                    <div>
+                      <div style={{fontSize:12,fontWeight:500,color:'var(--mg)'}}>{d.nombre} {d.apellido}</div>
+                      {d.telefono&&<div style={{fontSize:11,color:'var(--sl-m)'}}>{d.telefono}</div>}
+                    </div>
+                  </div>
+                  <button className="btn-sec" style={{fontSize:11,padding:'4px 8px',whiteSpace:'nowrap'}} onClick={()=>{ setModal(false); openModal(d) }}>Ver / Editar</button>
+                </div>
+              ))}
+              <div style={{fontSize:11,color:'#7A5010',marginTop:4}}>Podés igualmente guardar si son personas distintas.</div>
+            </div>
+          )}
+
           <div className="form-row2">
             <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Nombre</label><input className="form-inp" value={form.nombre} onChange={set('nombre')} placeholder="Nombre"/></div>
             <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Apellido</label><input className="form-inp" value={form.apellido} onChange={set('apellido')} placeholder="Apellido"/></div>
@@ -387,47 +410,61 @@ export default function Alumnos({ esAdmin }) {
               <button className="btn-sec" style={{fontSize:12,marginTop:8}} onClick={agregarHorarioEnModal}>+ Agregar horario</button>
             </div>
           </div>
-        </Modal>
-      )}
 
-      {/* MODAL Horarios */}
-      {horariosModal&&(
-        <Modal title={`Horarios — ${horariosModal.nombre} ${horariosModal.apellido}`} onClose={()=>{setHorariosModal(null);setReplicarOk(false)}}
-          footer={<button className="btn-pri" onClick={()=>{setHorariosModal(null);setReplicarOk(false)}}>Cerrar</button>}>
-          {horarios.length===0?<div className="empty" style={{padding:'12px 0'}}>Sin horarios fijos</div>
-            :horarios.map(h=>(
-              <div key={h.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 0',borderBottom:'1px solid var(--border)'}}>
-                <div><div style={{fontSize:13,fontWeight:500}}>{DIAS[h.dia_semana]} {h.hora?.slice(0,5)}</div><div style={{fontSize:11,color:'var(--sl-m)'}}>{h.nombre_clase} · {h.sala} · {h.instructores?`${h.instructores.nombre} ${h.instructores.apellido}`:'—'}</div></div>
-                <button className="btn-danger" style={{fontSize:11,padding:'3px 7px'}} onClick={()=>eliminarHorario(h.id)}>x</button>
-              </div>
-            ))
-          }
-          <div style={{marginTop:14,padding:'12px',background:'var(--sl-l)',borderRadius:10}}>
-            <div style={{fontSize:11,fontWeight:500,color:'var(--sl-m)',textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:10}}>Agregar horario fijo</div>
-            <div className="form-row2">
-              <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Día</label><select className="form-inp" value={horarioForm.dia_semana} onChange={setH('dia_semana')}>{DIAS.map((d,i)=><option key={i} value={i}>{d}</option>)}</select></div>
-              <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Hora</label><input className="form-inp" type="time" value={horarioForm.hora} onChange={setH('hora')}/></div>
-            </div>
-            <div className="form-row" style={{marginTop:10}}><label className="form-lbl">Nombre de la clase</label><input className="form-inp" value={horarioForm.nombre_clase} onChange={setH('nombre_clase')} placeholder="Ej: Reformer Intermedio"/></div>
-            <div className="form-row2">
-              <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Instructor</label><select className="form-inp" value={horarioForm.instructor_id} onChange={setH('instructor_id')}><option value="">Sin asignar</option>{instructores.map(i=><option key={i.id} value={i.id}>{i.nombre} {i.apellido}</option>)}</select></div>
-              <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Sala</label><select className="form-inp" value={horarioForm.sala} onChange={setH('sala')}><option value="Sala A">Sala A</option><option value="Sala B">Sala B</option></select></div>
-            </div>
-            <button className="btn-pri" style={{marginTop:10,fontSize:12}} onClick={agregarHorario} disabled={saving}>{saving?'…':'+ Agregar'}</button>
-          </div>
-          {horarios.length>0&&(
+          {/* Generar clases en el calendario — solo para alumnos existentes con horarios */}
+          {form.id && formHorarios.length > 0 && (
             <div style={{marginTop:14,padding:'12px',background:'#FEF3E2',borderRadius:10,border:'1px solid #F0C060'}}>
               <div style={{fontSize:11,fontWeight:500,color:'#7A5010',textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:10}}>Generar clases en el calendario</div>
               <div className="form-row2">
                 <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Desde</label><input className="form-inp" type="date" value={replicarDesde} onChange={e=>setReplicarDesde(e.target.value)}/></div>
                 <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Semanas</label><select className="form-inp" value={replicarSemanas} onChange={e=>setReplicarSemanas(Number(e.target.value))}>{[1,2,3,4,6,8,12].map(n=><option key={n} value={n}>{n} semanas</option>)}</select></div>
               </div>
-              {replicarOk&&<div style={{fontSize:12,color:'#2D7A5A',background:'#E4F4EE',padding:'7px 10px',borderRadius:7,marginBottom:8}}>Clases generadas correctamente</div>}
-              <button className="btn-pri" style={{fontSize:12,background:'#D4A020',marginTop:8}} onClick={replicarClases} disabled={replicando}>{replicando?'Generando…':`Generar ${replicarSemanas} semanas`}</button>
+              {replicarOk&&<div style={{fontSize:12,color:'#2D7A5A',background:'#E4F4EE',padding:'7px 10px',borderRadius:7,marginTop:8}}>Clases generadas correctamente</div>}
+              <button className="btn-pri" style={{fontSize:12,background:'#D4A020',marginTop:8}} onClick={generarClasesDesdeModal} disabled={replicando}>{replicando?'Generando…':`Generar ${replicarSemanas} semanas`}</button>
             </div>
           )}
         </Modal>
-      )}
+        )
+      })()}
+
+      {/* MODAL auditoría duplicados */}
+      {auditModal&&(()=>{
+        const grupos = []
+        const vistos = new Set()
+        for (const a of alumnos) {
+          if (vistos.has(a.id)) continue
+          const dups = buscarPosiblesDuplicados(a, alumnos)
+          if (dups.length > 0) {
+            grupos.push([a, ...dups])
+            vistos.add(a.id)
+            dups.forEach(d=>vistos.add(d.id))
+          }
+        }
+        return (
+          <Modal title="Auditoría de duplicados" onClose={()=>setAuditModal(false)} footer={<button className="btn-pri" onClick={()=>setAuditModal(false)}>Cerrar</button>}>
+            {grupos.length === 0
+              ? <div style={{padding:'20px 0',textAlign:'center',color:'var(--sl-m)',fontSize:13}}>No se detectaron posibles duplicados.</div>
+              : grupos.map((grupo, gi)=>(
+                <div key={gi} style={{marginBottom:16,border:'1px solid #F0C060',borderRadius:10,overflow:'hidden'}}>
+                  <div style={{background:'#FEF3E2',padding:'6px 12px',fontSize:11,fontWeight:600,color:'#7A5010'}}>Posible duplicado — grupo {gi+1}</div>
+                  {grupo.map(a=>(
+                    <div key={a.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,padding:'9px 12px',borderTop:'1px solid #F5E8C8'}}>
+                      <div style={{display:'flex',alignItems:'center',gap:8}}>
+                        <Avatar nombre={a.nombre} apellido={a.apellido} size={26} fontSize={10}/>
+                        <div>
+                          <div style={{fontSize:13,fontWeight:500,color:'var(--mg)'}}>{a.nombre} {a.apellido}</div>
+                          <div style={{fontSize:11,color:'var(--sl-m)'}}>{[a.telefono, a.fecha_nacimiento&&format(new Date(a.fecha_nacimiento+'T00:00:00'),"d/MM/yyyy"), a.plan].filter(Boolean).join(' · ')}</div>
+                        </div>
+                      </div>
+                      <button className="btn-sec" style={{fontSize:11,padding:'4px 8px',whiteSpace:'nowrap'}} onClick={()=>{ setAuditModal(false); openModal(a) }}>Editar</button>
+                    </div>
+                  ))}
+                </div>
+              ))
+            }
+          </Modal>
+        )
+      })()}
 
       {/* MODAL historial */}
       {historial&&(
