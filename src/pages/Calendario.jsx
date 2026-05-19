@@ -10,12 +10,13 @@ import {
 import { es } from 'date-fns/locale'
 
 // Colores por defecto para instructores (asignados por orden de creación)
-const COL_INST = [
-  { bg:'#FAE0EA', text:'#8B1A42', border:'#C0396B', nombre:'Rosa magenta' },
+export const COL_INST = [
+  { bg:'#FAE0EA', text:'#8B1A42', border:'#C0396B', nombre:'Rosa' },
   { bg:'#D8F3EA', text:'#085041', border:'#1D9E75', nombre:'Verde' },
   { bg:'#D6E8F9', text:'#042C53', border:'#185FA5', nombre:'Azul' },
   { bg:'#F0EAF8', text:'#6A3A8A', border:'#9B6BBB', nombre:'Violeta' },
-  { bg:'#FEF3E2', text:'#7A5010', border:'#D4A020', nombre:'Naranja' },
+  { bg:'#FEE8D5', text:'#7A3510', border:'#D06020', nombre:'Naranja' },
+  { bg:'#FDECEA', text:'#B03030', border:'#E24B4A', nombre:'Rojo' },
 ]
 
 const ESTADOS = {
@@ -112,6 +113,8 @@ export default function Calendario({ esAdmin }) {
   }
 
   function colInst(instId) {
+    const override = localStorage.getItem('inst_color_' + instId)
+    if (override !== null) return COL_INST[Number(override) % COL_INST.length] || COL_INST[0]
     const idx = instructores.findIndex(i=>i.id===instId)
     return COL_INST[idx%COL_INST.length]||COL_INST[0]
   }

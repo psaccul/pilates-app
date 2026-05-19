@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import Modal from '../components/Modal'
 import Avatar from '../components/Avatar'
+import { COL_INST } from './Calendario'
 
 const emptyForm = { nombre:'', apellido:'', telefono:'', whatsapp:'', especialidad:'' }
 
@@ -12,6 +13,18 @@ export default function Instructores() {
   const [modal, setModal]               = useState(false)
   const [form, setForm]                 = useState(emptyForm)
   const [saving, setSaving]             = useState(false)
+  const [colorPrefs, setColorPrefs]     = useState(() => {
+    const p = {}
+    for (const k of Object.keys(localStorage)) {
+      if (k.startsWith('inst_color_')) p[k.replace('inst_color_','')] = Number(localStorage.getItem(k))
+    }
+    return p
+  })
+
+  function setColorInst(id, idx) {
+    localStorage.setItem('inst_color_' + id, idx)
+    setColorPrefs(prev => ({ ...prev, [id]: idx }))
+  }
 
   useEffect(() => {
     fetchData()
@@ -64,7 +77,7 @@ export default function Instructores() {
               <thead>
                 <tr>
                   <th style={{position:'sticky',left:0,background:'var(--sl-l)',zIndex:2}}>Instructor</th>
-                  <th>Especialidad</th><th>Teléfono</th><th>WhatsApp</th><th>Alumnos</th><th>Clases</th><th>% Grupal</th><th>Acciones</th>
+                  <th>Especialidad</th><th>Teléfono</th><th>WhatsApp</th><th>Alumnos</th><th>Clases</th><th>% Grupal</th><th>Color calendario</th><th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -89,6 +102,18 @@ export default function Instructores() {
                       <td style={{fontFamily:'var(--font-num)',textAlign:'center'}}>{(i.alumnos||[]).length}</td>
                       <td style={{fontFamily:'var(--font-num)',textAlign:'center'}}>{(i.clases||[]).length}</td>
                       <td>{tar?<span style={{fontFamily:'var(--font-num)',fontWeight:500}}>{tar.porcentaje_grupal}%</span>:<span style={{color:'var(--sl-m)',fontSize:11}}>Sin tarifa</span>}</td>
+                      <td>
+                        <div style={{display:'flex',gap:5,alignItems:'center'}}>
+                          {COL_INST.map((c,idx)=>{
+                            const sel = colorPrefs[i.id] === idx || (colorPrefs[i.id] === undefined && instructores.findIndex(x=>x.id===i.id) % COL_INST.length === idx)
+                            return (
+                              <div key={idx} onClick={()=>setColorInst(i.id, idx)}
+                                title={c.nombre}
+                                style={{width:18,height:18,borderRadius:'50%',background:c.bg,border:`2px solid ${sel?c.border:'transparent'}`,cursor:'pointer',flexShrink:0,outline:sel?`2px solid ${c.border}`:'none',outlineOffset:1}}/>
+                            )
+                          })}
+                        </div>
+                      </td>
                       <td>
                         <div style={{display:'flex',gap:5,whiteSpace:'nowrap'}}>
                           <button className="btn-sec" style={{fontSize:11,padding:'4px 8px'}} onClick={() => openModal(i)}>Editar</button>
