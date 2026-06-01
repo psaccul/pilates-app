@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import Modal from '../components/Modal'
 import Avatar from '../components/Avatar'
-import { COL_INST } from './Calendario'
+import { COL_INST } from '../lib/colores'
 
 const emptyForm = { nombre:'', apellido:'', telefono:'', whatsapp:'', especialidad:'' }
 
