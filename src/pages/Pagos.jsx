@@ -10,6 +10,7 @@ const emptyForm = { alumno_id:'', concepto:'', monto:'', medio:'efectivo', pagad
 export default function Pagos({ esAdmin }) {
   const [pagos, setPagos]     = useState([])
   const [alumnos, setAlumnos] = useState([])
+  const [config, setConfig]   = useState({})
   const [loading, setLoading] = useState(true)
   const [modal, setModal]     = useState(false)
   const [form, setForm]       = useState(emptyForm)
@@ -25,13 +26,23 @@ export default function Pagos({ esAdmin }) {
 
   async function fetchData() {
     setLoading(true)
-    const [{ data: pg }, { data: al }] = await Promise.all([
-      supabase.from('pagos').select('*, alumnos(nombre,apellido,plan)').order('created_at',{ascending:false}),
+    const [{ data: pg }, { data: al }, { data: cfg }] = await Promise.all([
+      supabase.from('pagos').select('*, alumnos(nombre,apellido,plan,clases_semana)').order('created_at',{ascending:false}),
       supabase.from('alumnos').select('id,nombre,apellido').eq('activo',true).order('apellido'),
+      supabase.from('configuracion').select('*').eq('id',1).maybeSingle(),
     ])
     setPagos(pg||[])
     setAlumnos(al||[])
+    setConfig(cfg||{})
     setLoading(false)
+  }
+
+  function precioSegunPlan(alumno) {
+    if (!alumno || !config) return null
+    if (alumno.plan === 'mensual') return Number(config[`precio_mensual_${alumno.clases_semana||2}`]||0) || null
+    if (alumno.plan === 'pack')    return Number(config.precio_prepago||0) || null
+    if (alumno.plan === 'sueltas') return Number(config.precio_sueltas||0) || null
+    return null
   }
 
   function openModal(pago = null) {
@@ -132,10 +143,17 @@ export default function Pagos({ esAdmin }) {
                     </td>
                     <td style={{whiteSpace:'nowrap'}}>{p.concepto}</td>
                     <td style={{whiteSpace:'nowrap'}}>
-                      {p.alumnos?.plan === 'mensual' && <span style={{fontSize:11,padding:'2px 7px',borderRadius:5,background:'#D8F3EA',color:'#085041',fontWeight:500}}>Mensual</span>}
-                      {p.alumnos?.plan === 'pack'    && <span style={{fontSize:11,padding:'2px 7px',borderRadius:5,background:'#D6E8F9',color:'#042C53',fontWeight:500}}>Prepago</span>}
-                      {p.alumnos?.plan === 'sueltas' && <span style={{fontSize:11,padding:'2px 7px',borderRadius:5,background:'#F0EAF8',color:'#6A3A8A',fontWeight:500}}>Sueltas</span>}
-                      {!p.alumnos?.plan && <span style={{color:'var(--border)'}}>—</span>}
+                      {(()=>{
+                        const precio = precioSegunPlan(p.alumnos)
+                        const plan = p.alumnos?.plan
+                        const [bg,col,label] = plan==='mensual'?['#D8F3EA','#085041','Mensual']:plan==='pack'?['#D6E8F9','#042C53','Prepago']:plan==='sueltas'?['#F0EAF8','#6A3A8A','Sueltas']:['var(--sl-l)','var(--sl-m)','—']
+                        return (
+                          <div style={{display:'flex',flexDirection:'column',gap:2}}>
+                            <span style={{fontSize:11,padding:'2px 7px',borderRadius:5,background:bg,color:col,fontWeight:500,alignSelf:'flex-start'}}>{label}</span>
+                            {precio ? <span style={{fontSize:11,fontFamily:'var(--font-num)',color:'var(--sl-m)'}}>${Number(precio).toLocaleString('es-AR')}</span> : null}
+                          </div>
+                        )
+                      })()}
                     </td>
                     <td style={{fontSize:11,color:'var(--sl-m)',whiteSpace:'nowrap'}}>{p.periodo||'—'}</td>
                     <td style={{fontWeight:500,fontFamily:'var(--font-num)',whiteSpace:'nowrap'}}>{p.monto!=null?`$${Number(p.monto).toLocaleString('es-AR')}`:'—'}</td>
