@@ -33,7 +33,7 @@ export default function Reportes() {
 
     if (tab === 'facturacion') {
       const [{ data: als }, { data: cfg }] = await Promise.all([
-        supabase.from('alumnos').select('id,nombre,apellido,plan,nivel,clases_semana,instructores(nombre,apellido)').eq('activo',true).order('apellido'),
+        supabase.from('alumnos').select('id,nombre,apellido,plan,nivel,clases_semana,instructor_id,instructores(nombre,apellido),horarios_alumno(instructor_id,instructores(nombre))').eq('activo',true).order('apellido'),
         supabase.from('configuracion').select('precio_mensual,precio_prepago,precio_sueltas,precio_individual,precio_mensual_1,precio_mensual_2,precio_mensual_3,precio_mensual_4,precio_mensual_5').eq('id',1).maybeSingle(),
       ])
       const alumnosConMonto = (als||[]).map(a => {
@@ -57,7 +57,7 @@ export default function Reportes() {
       const diasMes   = getDaysInMonth(mesDate)
       const semansMes = Math.ceil(diasMes/7)
       const { data: als } = await supabase.from('alumnos')
-        .select('id,nombre,apellido,nivel,plan,clases_semana,instructores(nombre,apellido)')
+        .select('id,nombre,apellido,nivel,plan,clases_semana,instructor_id,instructores(nombre,apellido),horarios_alumno(instructor_id,instructores(nombre))')
         .eq('activo',true).order('apellido')
       const alumnosIds = (als||[]).map(a=>a.id)
       const { data: asisData } = await supabase.from('asistencias')
@@ -127,12 +127,23 @@ export default function Reportes() {
 
     if (tab === 'alumnos') {
       const { data: als } = await supabase.from('alumnos')
-        .select('*, instructores(nombre,apellido), pagos(pagado,monto), asistencias(asistio,estado_asistencia)')
+        .select('*, instructor_id, instructores(nombre,apellido), horarios_alumno(instructor_id,instructores(nombre)), pagos(pagado,monto), asistencias(asistio,estado_asistencia)')
         .eq('activo',true).order('apellido')
       setAlumnosReport(als||[])
     }
 
     setLoading(false)
+  }
+
+  function mostrarInstructores(alumno) {
+    const map = new Map()
+    if (alumno.instructor_id && alumno.instructores)
+      map.set(alumno.instructor_id, alumno.instructores.nombre)
+    ;(alumno.horarios_alumno||[]).forEach(h => {
+      if (h.instructor_id && h.instructores) map.set(h.instructor_id, h.instructores.nombre)
+    })
+    if (map.size === 0) return '—'
+    return Array.from(map.values()).join(' · ')
   }
 
   function estadoPago(alumno) {
@@ -206,7 +217,7 @@ export default function Reportes() {
                       <td style={{textAlign:'center'}}><span style={{fontSize:12,fontWeight:700,color:a.nivel==='A'?'#2D7A5A':a.nivel==='B'?'#185FA5':'#6A3A8A'}}>{a.nivel||'—'}</span></td>
                       <td style={{whiteSpace:'nowrap'}}>{a.plan==='mensual'?'Plan mensual':a.plan==='pack'?'Prepago':'Clases sueltas'}</td>
                       <td style={{textAlign:'center',fontFamily:'var(--font-num)'}}>{a.clases_semana||2}</td>
-                      <td style={{fontSize:11,color:'var(--sl-m)',whiteSpace:'nowrap'}}>{a.instructores?`${a.instructores.nombre} ${a.instructores.apellido}`:'—'}</td>
+                      <td style={{fontSize:11,color:'var(--sl-m)'}}>{mostrarInstructores(a)}</td>
                       <td style={{textAlign:'right',fontFamily:'var(--font-num)',fontWeight:600}}>${a.monto.toLocaleString('es-AR')}</td>
                     </tr>
                   ))}
@@ -249,7 +260,7 @@ export default function Reportes() {
                       <tr key={a.id} style={{background:a.realizadas===0?'#FFF5F5':a.pct>=100?'#F6FBF8':'var(--white)'}}>
                         <td className="col-sticky"><span style={{fontWeight:500,cursor:'pointer',color:'var(--mg)'}} onClick={()=>window.dispatchEvent(new CustomEvent('open-ficha-alumno',{detail:a.id}))}>{a.nombre} {a.apellido}</span></td>
                         <td style={{textAlign:'center'}}><span style={{fontSize:12,fontWeight:700,color:a.nivel==='A'?'#2D7A5A':a.nivel==='B'?'#185FA5':'#6A3A8A'}}>{a.nivel||'—'}</span></td>
-                        <td style={{fontSize:11,color:'var(--sl-m)',whiteSpace:'nowrap'}}>{a.instructores?`${a.instructores.nombre} ${a.instructores.apellido}`:'—'}</td>
+                        <td style={{fontSize:11,color:'var(--sl-m)'}}>{mostrarInstructores(a)}</td>
                         <td style={{textAlign:'center',fontFamily:'var(--font-num)',fontWeight:500}}>{a.esperadas}</td>
                         <td style={{textAlign:'center',fontFamily:'var(--font-num)',fontWeight:700,color}}>{a.realizadas}</td>
                         <td style={{textAlign:'center',fontFamily:'var(--font-num)',color:a.faltantes>0?'#B03030':'#2D7A5A',fontWeight:a.faltantes>0?600:400}}>{a.faltantes>0?`-${a.faltantes}`:'ok'}</td>
@@ -385,7 +396,7 @@ export default function Reportes() {
                       <tr key={a.id} style={ep.deudor?{background:'#FFF5F5'}:{}}>
                         <td className="col-sticky"><span style={{fontWeight:500,cursor:'pointer',color:'var(--mg)'}} onClick={()=>window.dispatchEvent(new CustomEvent('open-ficha-alumno',{detail:a.id}))}>{a.nombre} {a.apellido}</span></td>
                         <td style={{whiteSpace:'nowrap'}}>{a.plan==='mensual'?'Plan mensual':a.plan==='pack'?'Prepago':'Clases sueltas'}</td>
-                        <td style={{fontSize:11,whiteSpace:'nowrap'}}>{a.instructores?`${a.instructores.nombre} ${a.instructores.apellido}`:'—'}</td>
+                        <td style={{fontSize:11}}>{mostrarInstructores(a)}</td>
                         <td style={{textAlign:'center',fontWeight:500,fontFamily:'var(--font-num)'}}>{presentes}</td>
                         <td style={{textAlign:'center'}}>{aRec>0?<span style={{background:'#FEF3E2',color:'#7A5010',padding:'2px 8px',borderRadius:6,fontSize:11,fontWeight:500}}>{aRec}</span>:'—'}</td>
                         <td><span className={`est ${ep.cls}`}>{ep.label}</span></td>
