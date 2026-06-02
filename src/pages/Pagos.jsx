@@ -26,7 +26,7 @@ export default function Pagos({ esAdmin }) {
   async function fetchData() {
     setLoading(true)
     const [{ data: pg }, { data: al }] = await Promise.all([
-      supabase.from('pagos').select('*, alumnos(nombre,apellido)').order('created_at',{ascending:false}),
+      supabase.from('pagos').select('*, alumnos(nombre,apellido,plan)').order('created_at',{ascending:false}),
       supabase.from('alumnos').select('id,nombre,apellido').eq('activo',true).order('apellido'),
     ])
     setPagos(pg||[])
@@ -117,7 +117,7 @@ export default function Pagos({ esAdmin }) {
               <thead>
                 <tr>
                   <th style={{position:'sticky',left:0,background:'var(--sl-l)',zIndex:2}}>Alumno</th>
-                  <th>Concepto</th><th>Período</th><th>Monto</th><th>Medio</th><th>Fecha</th><th>Estado</th><th>Acciones</th>
+                  <th>Concepto</th><th>Plan</th><th>Período</th><th>Monto</th><th>Medio</th><th>Fecha</th><th>Estado</th><th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -131,6 +131,12 @@ export default function Pagos({ esAdmin }) {
                       </div>
                     </td>
                     <td style={{whiteSpace:'nowrap'}}>{p.concepto}</td>
+                    <td style={{whiteSpace:'nowrap'}}>
+                      {p.alumnos?.plan === 'mensual' && <span style={{fontSize:11,padding:'2px 7px',borderRadius:5,background:'#D8F3EA',color:'#085041',fontWeight:500}}>Mensual</span>}
+                      {p.alumnos?.plan === 'pack'    && <span style={{fontSize:11,padding:'2px 7px',borderRadius:5,background:'#D6E8F9',color:'#042C53',fontWeight:500}}>Prepago</span>}
+                      {p.alumnos?.plan === 'sueltas' && <span style={{fontSize:11,padding:'2px 7px',borderRadius:5,background:'#F0EAF8',color:'#6A3A8A',fontWeight:500}}>Sueltas</span>}
+                      {!p.alumnos?.plan && <span style={{color:'var(--border)'}}>—</span>}
+                    </td>
                     <td style={{fontSize:11,color:'var(--sl-m)',whiteSpace:'nowrap'}}>{p.periodo||'—'}</td>
                     <td style={{fontWeight:500,fontFamily:'var(--font-num)',whiteSpace:'nowrap'}}>{p.monto!=null?`$${Number(p.monto).toLocaleString('es-AR')}`:'—'}</td>
                     <td>{medioTag(p.medio)}</td>
