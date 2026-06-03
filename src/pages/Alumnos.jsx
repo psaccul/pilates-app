@@ -80,7 +80,7 @@ export default function Alumnos({ esAdmin }) {
     setHorariosToDelete([])
     setReplicarOk(false)
     if (alumno) {
-      const { data } = await supabase.from('horarios_alumno').select('*').eq('alumno_id',alumno.id).eq('activo',true).order('dia_semana').order('hora')
+      const { data } = await supabase.from('horarios_alumno').select('*, instructores(nombre)').eq('alumno_id',alumno.id).eq('activo',true).order('dia_semana').order('hora')
       setFormHorarios(data||[])
     } else {
       setFormHorarios([])
@@ -391,7 +391,12 @@ export default function Alumnos({ esAdmin }) {
                     <div>
                       <span style={{fontSize:13,fontWeight:500}}>{DIAS[h.dia_semana]} {h.hora?.slice(0,5)}</span>
                       <span style={{fontSize:11,color:'var(--sl-m)',marginLeft:8}}>{h.nombre_clase}</span>
-                      {h._isNew&&<span style={{fontSize:9,marginLeft:6,color:'#2D7A5A',fontWeight:700}}>nuevo</span>}
+                      {(h.instructores?.nombre || (h._isNew && instructores.find(i=>i.id===h.instructor_id)?.nombre)) && (
+                        <span style={{fontSize:10,marginLeft:6,color:'var(--white)',background:'var(--sl-m)',padding:'1px 6px',borderRadius:4}}>
+                          {h.instructores?.nombre || instructores.find(i=>i.id===h.instructor_id)?.nombre}
+                        </span>
+                      )}
+                      {h._isNew&&<span style={{fontSize:9,marginLeft:4,color:'#2D7A5A',fontWeight:700}}>nuevo</span>}
                     </div>
                     <button className="btn-danger" style={{fontSize:11,padding:'2px 7px'}} onClick={()=>quitarHorarioEnModal(h)}>×</button>
                   </div>
