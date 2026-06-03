@@ -18,6 +18,7 @@ export default function Dashboard({ setPage, esGerente }) {
   const [panelAlumnos, setPanelAlumnos] = useState(false)
   const [panelAsist, setPanelAsist]     = useState(false)
   const [panelPagos, setPanelPagos]     = useState(false)
+  const [mostrarDeuda, setMostrarDeuda] = useState(false)
 
   const [todosAlumnos, setTodosAlumnos]   = useState([])
   const [pagosPend, setPagosPend]         = useState([])
@@ -317,30 +318,62 @@ export default function Dashboard({ setPage, esGerente }) {
           })}
         </div>
 
-        <div className="panel">
-          <div className="ph">
-            <span className="ph-title">Alumnos con deuda</span>
-            <button className="ph-link" onClick={() => setPage('alumnos')}>Ver todos →</button>
-          </div>
+        <div>
           {(() => {
             const conDeuda = alumnos.filter(a => (a.pagos||[]).some(p => !p.pagado) || (a.pagos||[]).length === 0)
-            if (conDeuda.length === 0) return <div className="empty" style={{color:'#2D7A5A'}}>¡Todo al día!</div>
-            return conDeuda.map(a => {
-              const ep = estadoPago(a)
-              return (
-                <div key={a.id} className="ai"
-                  onClick={() => window.dispatchEvent(new CustomEvent('open-ficha-alumno',{detail:a.id}))}>
-                  <Avatar nombre={a.nombre} apellido={a.apellido} />
-                  <div>
-                    <div className="an">{a.nombre} {a.apellido}</div>
-                    <div className="ap">{a.plan==='mensual'?'Plan mensual':a.plan==='pack'?'Pack prepago':'Clases sueltas'}</div>
+            return (
+              <>
+                <button
+                  onClick={() => setMostrarDeuda(v => !v)}
+                  style={{
+                    width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between',
+                    padding:'11px 16px', borderRadius:10, border:'1px solid #F5D9B0',
+                    background: conDeuda.length > 0 ? '#FEF6EC' : '#F0FBF5',
+                    cursor:'pointer', marginBottom: mostrarDeuda ? 0 : undefined,
+                    borderBottomLeftRadius: mostrarDeuda ? 0 : 10,
+                    borderBottomRightRadius: mostrarDeuda ? 0 : 10,
+                  }}>
+                  <div style={{display:'flex',alignItems:'center',gap:10}}>
+                    <span style={{fontSize:14}}>💰</span>
+                    <span style={{fontSize:13,fontWeight:600,color: conDeuda.length > 0 ? '#7A4A10' : '#2D7A5A'}}>
+                      Alumnos con deuda
+                    </span>
+                    {conDeuda.length > 0
+                      ? <span style={{fontSize:11,padding:'2px 8px',borderRadius:99,background:'#F0C060',color:'#7A4A10',fontWeight:700}}>{conDeuda.length}</span>
+                      : <span style={{fontSize:11,color:'#2D7A5A'}}>¡Todo al día!</span>
+                    }
                   </div>
-                  <span className={`est ${ep==='pendiente'?'e-pe':'e-ve'}`} style={{marginLeft:'auto'}}>
-                    {ep==='pendiente'?'Pendiente':'Sin pago'}
-                  </span>
-                </div>
-              )
-            })
+                  <span style={{fontSize:12,color:'#7A4A10',fontWeight:500}}>{mostrarDeuda ? '▲ Ocultar' : '▼ Ver lista'}</span>
+                </button>
+
+                {mostrarDeuda && (
+                  <div style={{border:'1px solid #F5D9B0',borderTop:'none',borderBottomLeftRadius:10,borderBottomRightRadius:10,overflow:'hidden'}}>
+                    {conDeuda.length === 0
+                      ? <div className="empty" style={{color:'#2D7A5A',padding:'14px'}}>¡Todo al día!</div>
+                      : conDeuda.map(a => {
+                          const ep = estadoPago(a)
+                          return (
+                            <div key={a.id} className="ai" style={{borderBottom:'1px solid #FAE8CC',cursor:'pointer'}}
+                              onClick={() => window.dispatchEvent(new CustomEvent('open-ficha-alumno',{detail:a.id}))}>
+                              <Avatar nombre={a.nombre} apellido={a.apellido} />
+                              <div>
+                                <div className="an">{a.nombre} {a.apellido}</div>
+                                <div className="ap">{a.plan==='mensual'?'Plan mensual':a.plan==='pack'?'Pack prepago':'Clases sueltas'}</div>
+                              </div>
+                              <span className={`est ${ep==='pendiente'?'e-pe':'e-ve'}`} style={{marginLeft:'auto'}}>
+                                {ep==='pendiente'?'Pendiente':'Sin pago'}
+                              </span>
+                            </div>
+                          )
+                        })
+                    }
+                    <div style={{padding:'8px 14px',background:'#FEF6EC'}}>
+                      <button className="ph-link" style={{fontSize:11}} onClick={() => setPage('alumnos')}>Ver todos en Alumnos →</button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )
           })()}
         </div>
       </div>
