@@ -47,6 +47,7 @@ export default function Alumnos({ esAdmin }) {
   const [replicando, setReplicando]           = useState(false)
   const [replicarOk, setReplicarOk]           = useState(false)
   const [auditModal, setAuditModal]           = useState(false)
+  const [semanasNuevo, setSemanasNuevo]       = useState(4)
 
   useEffect(() => {
     fetchData()
@@ -234,10 +235,48 @@ export default function Alumnos({ esAdmin }) {
   const set   = k => e => setForm(f=>({...f,[k]:e.target.value}))
   const setHN = k => e => setFormHorarioNew(f=>({...f,[k]:e.target.value}))
 
-  function agregarHorarioEnModal() {
+  async function agregarHorarioEnModal() {
     if (!formHorarioNew.hora || !formHorarioNew.nombre_clase) return
-    setFormHorarios(prev=>[...prev, { ...formHorarioNew, dia_semana:Number(formHorarioNew.dia_semana), _isNew:true, _uid: Date.now() }])
+    setSaving(true)
+    const h = { ...formHorarioNew, dia_semana: Number(formHorarioNew.dia_semana) }
+
+    if (form.id) {
+      // Alumno existente: guardar en DB inmediatamente
+      const { data: guardado } = await supabase.from('horarios_alumno')
+        .insert({ alumno_id:form.id, dia_semana:h.dia_semana, hora:h.hora, instructor_id:h.instructor_id||null, sala:h.sala, nombre_clase:h.nombre_clase, activo:true })
+        .select('*, instructores(nombre)').single()
+      if (guardado) setFormHorarios(prev=>[...prev, guardado])
+
+      // Generar clases si se eligió > 0 semanas
+      if (semanasNuevo > 0) {
+        const desde = new Date(); desde.setHours(0,0,0,0)
+        for (let semana=0; semana<semanasNuevo; semana++) {
+          const base = addWeeks(desde, semana)
+          const inicioSemana = startOfWeek(base, {weekStartsOn:1})
+          const fechaDia = addDays(inicioSemana, h.dia_semana)
+          if (fechaDia < desde) continue
+          const fechaStr = format(fechaDia, 'yyyy-MM-dd')
+          let q = supabase.from('clases').select('id').eq('fecha',fechaStr).eq('hora',h.hora)
+          if (h.instructor_id) q = q.eq('instructor_id', h.instructor_id)
+          else q = q.is('instructor_id', null)
+          const { data: existe } = await q.maybeSingle()
+          let claseId
+          if (!existe) {
+            const { data: nueva } = await supabase.from('clases').insert({ nombre:h.nombre_clase, tipo:'grupal', instructor_id:h.instructor_id||null, fecha:fechaStr, hora:h.hora, sala:h.sala||'Sala A', capacidad:4 }).select().single()
+            claseId = nueva?.id
+          } else { claseId = existe.id }
+          if (claseId) await supabase.from('asistencias').upsert({ clase_id:claseId, alumno_id:form.id, asistio:false, recuperacion:false, estado_asistencia:'pendiente' }, {onConflict:'clase_id,alumno_id'})
+        }
+        window.dispatchEvent(new CustomEvent('horarios-generados'))
+        setReplicarOk(true)
+      }
+    } else {
+      // Alumno nuevo: solo agregar al estado, se guarda con "Guardar alumno"
+      setFormHorarios(prev=>[...prev, { ...h, _isNew:true, _uid:Date.now() }])
+    }
+
     setFormHorarioNew(f=>({ ...emptyHorario, instructor_id:f.instructor_id }))
+    setSaving(false)
   }
 
   function quitarHorarioEnModal(h) {
@@ -412,7 +451,18 @@ export default function Alumnos({ esAdmin }) {
                 <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Instructor</label><select className="form-inp" value={formHorarioNew.instructor_id} onChange={setHN('instructor_id')}><option value="">Sin asignar</option>{instructores.map(i=><option key={i.id} value={i.id}>{i.nombre} {i.apellido}</option>)}</select></div>
                 <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Sala</label><select className="form-inp" value={formHorarioNew.sala} onChange={setHN('sala')}><option value="Sala A">Sala A</option><option value="Sala B">Sala B</option></select></div>
               </div>
-              <button className="btn-sec" style={{fontSize:12,marginTop:8}} onClick={agregarHorarioEnModal}>+ Agregar horario</button>
+              <div style={{display:'flex',alignItems:'center',gap:8,marginTop:10,flexWrap:'wrap'}}>
+                <span style={{fontSize:11,color:'var(--sl-m)'}}>Generar clases:</span>
+                {[0,4,8,12].map(n=>(
+                  <button key={n} onClick={()=>setSemanasNuevo(n)}
+                    style={{fontSize:11,padding:'3px 10px',borderRadius:6,border:`1px solid ${semanasNuevo===n?'var(--mg)':'var(--border)'}`,background:semanasNuevo===n?'var(--mg)':'var(--white)',color:semanasNuevo===n?'#fff':'var(--dark)',cursor:'pointer',fontWeight:semanasNuevo===n?600:400}}>
+                    {n===0?'No generar':`${n} sem`}
+                  </button>
+                ))}
+              </div>
+              <button className="btn-sec" style={{fontSize:12,marginTop:8}} onClick={agregarHorarioEnModal} disabled={saving}>
+                {saving ? 'Guardando…' : semanasNuevo > 0 ? `+ Agregar y generar ${semanasNuevo} semanas` : '+ Agregar horario'}
+              </button>
             </div>
           </div>
 
