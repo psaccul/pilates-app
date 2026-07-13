@@ -432,8 +432,6 @@ export default function Reportes() {
           </div>
         )}
 
-      </>}
-
         {tab==='diferencias' && (()=>{
           const deMenos = diferencias.filter(p=>p.dif<0)
           const deMas   = diferencias.filter(p=>p.dif>0)
@@ -500,7 +498,7 @@ export default function Reportes() {
           </>)
         })()}
 
-    </>}
-  </>
+      </>}
+    </>
   )
 }
