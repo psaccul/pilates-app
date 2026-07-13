@@ -14,8 +14,10 @@ export default function Pagos({ esAdmin }) {
   const [loading, setLoading] = useState(true)
   const [modal, setModal]     = useState(false)
   const [form, setForm]       = useState(emptyForm)
-  const [saving, setSaving]   = useState(false)
-  const [filtro, setFiltro]   = useState('todos')
+  const [saving, setSaving]         = useState(false)
+  const [filtro, setFiltro]         = useState('todos')
+  const [busqueda, setBusqueda]     = useState('')
+  const [dropdownOpen, setDropdown] = useState(false)
 
   useEffect(() => {
     fetchData()
@@ -28,7 +30,7 @@ export default function Pagos({ esAdmin }) {
     setLoading(true)
     const [{ data: pg }, { data: al }, { data: cfg }] = await Promise.all([
       supabase.from('pagos').select('*, alumnos(nombre,apellido,plan,clases_semana)').order('created_at',{ascending:false}),
-      supabase.from('alumnos').select('id,nombre,apellido').eq('activo',true).order('apellido'),
+      supabase.from('alumnos').select('id,nombre,apellido,plan,clases_semana').eq('activo',true).order('apellido'),
       supabase.from('configuracion').select('*').eq('id',1).maybeSingle(),
     ])
     setPagos(pg||[])
@@ -49,6 +51,13 @@ export default function Pagos({ esAdmin }) {
     setForm(pago
       ? { id:pago.id, alumno_id:pago.alumno_id, concepto:pago.concepto, monto:pago.monto||'', medio:pago.medio, pagado:pago.pagado, fecha_pago:pago.fecha_pago||'', periodo:pago.periodo||'' }
       : { ...emptyForm, fecha_pago:format(new Date(),'yyyy-MM-dd'), periodo:format(new Date(),'yyyy-MM') })
+    if (pago) {
+      const a = alumnos.find(x=>x.id===pago.alumno_id)
+      setBusqueda(a ? `${a.nombre} ${a.apellido}` : '')
+    } else {
+      setBusqueda('')
+    }
+    setDropdown(false)
     setModal(true)
   }
 
@@ -182,20 +191,51 @@ export default function Pagos({ esAdmin }) {
         )}
       </div>
 
-      {modal && (
-        <Modal title={form.id?'Editar pago':'Registrar pago'} onClose={() => setModal(false)}
-          footer={<><button className="btn-sec" onClick={() => setModal(false)}>Cancelar</button><button className="btn-pri" onClick={handleSave} disabled={saving}>{saving?'Guardando…':'Guardar pago'}</button></>}>
-          <div className="form-row"><label className="form-lbl">Alumno</label><select className="form-inp" value={form.alumno_id} onChange={set('alumno_id')}><option value="">Seleccioná un alumno</option>{alumnos.map(a=><option key={a.id} value={a.id}>{a.nombre} {a.apellido}</option>)}</select></div>
-          <div className="form-row"><label className="form-lbl">Concepto</label><input className="form-inp" value={form.concepto} onChange={set('concepto')} placeholder="Ej: Plan mensual — Mayo"/></div>
-          <div className="form-row2">
-            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Monto</label><input className="form-inp" type="number" value={form.monto} onChange={set('monto')} placeholder="0"/></div>
-            <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Medio de pago</label><select className="form-inp" value={form.medio} onChange={set('medio')}><option value="efectivo">Efectivo</option><option value="mercadopago">Mercado Pago</option><option value="transferencia">Transferencia</option></select></div>
-          </div>
-          <div className="form-row" style={{marginTop:13}}><label className="form-lbl">Período (mes que corresponde)</label><input className="form-inp" type="month" value={form.periodo} onChange={set('periodo')}/></div>
-          <div className="form-row"><label className="form-lbl">Fecha de pago</label><input className="form-inp" type="date" value={form.fecha_pago} onChange={set('fecha_pago')}/></div>
-          <div className="form-row"><label className="form-lbl">¿Ya pagó?</label><div style={{marginTop:6}}><Toggle value={form.pagado} onChange={v=>setForm(f=>({...f,pagado:v}))} labelOn="Sí, ya pagó" labelOff="Pendiente"/></div></div>
-        </Modal>
-      )}
+      {modal && (()=>{
+        const alumnosFiltrados = busqueda.length > 0
+          ? alumnos.filter(a=>`${a.nombre} ${a.apellido}`.toLowerCase().includes(busqueda.toLowerCase()))
+          : alumnos
+        const selectedAlumno = alumnos.find(a=>a.id===form.alumno_id)||null
+        const precioEsperado = precioSegunPlan(selectedAlumno)
+        const montoBajo = selectedAlumno && Number(form.monto)>0 && precioEsperado && Number(form.monto)<precioEsperado
+        return (
+          <Modal title={form.id?'Editar pago':'Registrar pago'} onClose={() => setModal(false)}
+            footer={<><button className="btn-sec" onClick={() => setModal(false)}>Cancelar</button><button className="btn-pri" onClick={handleSave} disabled={saving}>{saving?'Guardando…':'Guardar pago'}</button></>}>
+            <div className="form-row" style={{position:'relative'}}>
+              <label className="form-lbl">Alumno</label>
+              <input className="form-inp" value={busqueda}
+                onChange={e=>{ setBusqueda(e.target.value); setDropdown(true); setForm(f=>({...f,alumno_id:''})) }}
+                onFocus={()=>setDropdown(true)}
+                onBlur={()=>setTimeout(()=>setDropdown(false),200)}
+                placeholder="Buscar alumno…" autoComplete="off"/>
+              {dropdownOpen && alumnosFiltrados.length>0 && (
+                <div style={{position:'absolute',top:'100%',left:0,right:0,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,zIndex:200,maxHeight:200,overflowY:'auto',boxShadow:'0 4px 16px rgba(0,0,0,0.18)'}}>
+                  {alumnosFiltrados.map(a=>(
+                    <div key={a.id}
+                      onMouseDown={()=>{ setForm(f=>({...f,alumno_id:a.id})); setBusqueda(`${a.nombre} ${a.apellido}`); setDropdown(false) }}
+                      style={{padding:'9px 12px',cursor:'pointer',fontSize:13,borderBottom:'1px solid var(--sl-l)'}}>
+                      {a.nombre} {a.apellido}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="form-row"><label className="form-lbl">Concepto</label><input className="form-inp" value={form.concepto} onChange={set('concepto')} placeholder="Ej: Plan mensual — Mayo"/></div>
+            <div className="form-row2">
+              <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Monto</label><input className="form-inp" type="number" value={form.monto} onChange={set('monto')} placeholder="0"/></div>
+              <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Medio de pago</label><select className="form-inp" value={form.medio} onChange={set('medio')}><option value="efectivo">Efectivo</option><option value="mercadopago">Mercado Pago</option><option value="transferencia">Transferencia</option></select></div>
+            </div>
+            {montoBajo && (
+              <div style={{margin:'-4px 0 12px',padding:'7px 11px',background:'#FEF6EC',border:'1px solid #F5D9B0',borderRadius:7,fontSize:12,color:'#7A5010',lineHeight:1.4}}>
+                ⚠️ Monto menor al plan (${Number(precioEsperado).toLocaleString('es-AR')}). Diferencia: ${(precioEsperado-Number(form.monto)).toLocaleString('es-AR')}
+              </div>
+            )}
+            <div className="form-row" style={{marginTop:13}}><label className="form-lbl">Período (mes que corresponde)</label><input className="form-inp" type="month" value={form.periodo} onChange={set('periodo')}/></div>
+            <div className="form-row"><label className="form-lbl">Fecha de pago</label><input className="form-inp" type="date" value={form.fecha_pago} onChange={set('fecha_pago')}/></div>
+            <div className="form-row"><label className="form-lbl">¿Ya pagó?</label><div style={{marginTop:6}}><Toggle value={form.pagado} onChange={v=>setForm(f=>({...f,pagado:v}))} labelOn="Sí, ya pagó" labelOff="Pendiente"/></div></div>
+          </Modal>
+        )
+      })()}
     </>
   )
 }
