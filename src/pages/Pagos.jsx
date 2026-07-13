@@ -114,11 +114,11 @@ export default function Pagos({ esAdmin }) {
 
   return (
     <>
-      <div className="stats" style={{gridTemplateColumns:'repeat(3,1fr)'}}>
+      {esAdmin && <div className="stats" style={{gridTemplateColumns:'repeat(3,1fr)'}}>
         <div className="sc" style={{'--acc':'var(--teal)'}}><div className="sc-lbl">Total cobrado</div><div className="sc-val" style={{fontSize:22}}>${Math.round(totalPagado).toLocaleString('es-AR')}</div></div>
         <div className="sc" style={{'--acc':'var(--mg)'}}><div className="sc-lbl">Pendiente de cobro</div><div className="sc-val" style={{fontSize:22,color:totalPendiente>0?'#B03030':'inherit'}}>${Math.round(totalPendiente).toLocaleString('es-AR')}</div></div>
         <div className="sc" style={{'--acc':'var(--blue)'}}><div className="sc-lbl">Registros totales</div><div className="sc-val">{pagos.length}</div></div>
-      </div>
+      </div>}
 
       <div className="tabs">
         {[['todos','Todos'],['pagados','Pagados'],['pendientes','Pendientes'],['aconfirmar','A confirmar']].map(([id,label])=>(
