@@ -201,25 +201,25 @@ export default function Pagos({ esAdmin }) {
         return (
           <Modal title={form.id?'Editar pago':'Registrar pago'} onClose={() => setModal(false)}
             footer={<><button className="btn-sec" onClick={() => setModal(false)}>Cancelar</button><button className="btn-pri" onClick={handleSave} disabled={saving}>{saving?'Guardando…':'Guardar pago'}</button></>}>
-            <div className="form-row" style={{position:'relative'}}>
+            <div className="form-row" style={{marginBottom: dropdownOpen && alumnosFiltrados.length>0 ? 0 : undefined}}>
               <label className="form-lbl">Alumno</label>
               <input className="form-inp" value={busqueda}
                 onChange={e=>{ setBusqueda(e.target.value); setDropdown(true); setForm(f=>({...f,alumno_id:''})) }}
                 onFocus={()=>setDropdown(true)}
                 onBlur={()=>setTimeout(()=>setDropdown(false),200)}
                 placeholder="Buscar alumno…" autoComplete="off"/>
-              {dropdownOpen && alumnosFiltrados.length>0 && (
-                <div style={{position:'absolute',top:'100%',left:0,right:0,background:'var(--bg)',border:'1px solid var(--border)',borderRadius:8,zIndex:200,maxHeight:200,overflowY:'auto',boxShadow:'0 4px 16px rgba(0,0,0,0.18)'}}>
-                  {alumnosFiltrados.map(a=>(
-                    <div key={a.id}
-                      onMouseDown={()=>{ setForm(f=>({...f,alumno_id:a.id})); setBusqueda(`${a.nombre} ${a.apellido}`); setDropdown(false) }}
-                      style={{padding:'9px 12px',cursor:'pointer',fontSize:13,borderBottom:'1px solid var(--sl-l)'}}>
-                      {a.nombre} {a.apellido}
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
+            {dropdownOpen && alumnosFiltrados.length>0 && (
+              <div style={{marginTop:-10,marginBottom:14,border:'1px solid var(--border)',borderRadius:8,overflow:'hidden',background:'var(--bg)',maxHeight:200,overflowY:'auto'}}>
+                {alumnosFiltrados.map(a=>(
+                  <div key={a.id}
+                    onMouseDown={()=>{ setForm(f=>({...f,alumno_id:a.id})); setBusqueda(`${a.nombre} ${a.apellido}`); setDropdown(false) }}
+                    style={{padding:'11px 12px',cursor:'pointer',fontSize:14,borderBottom:'1px solid var(--sl-l)',lineHeight:1.2}}>
+                    {a.nombre} {a.apellido}
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="form-row"><label className="form-lbl">Concepto</label><input className="form-inp" value={form.concepto} onChange={set('concepto')} placeholder="Ej: Plan mensual — Mayo"/></div>
             <div className="form-row2">
               <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Monto</label><input className="form-inp" type="number" value={form.monto} onChange={set('monto')} placeholder="0"/></div>
