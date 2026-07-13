@@ -23,6 +23,9 @@ export default function Reportes() {
   const [reporteInstructores, setReporteInstructores] = useState([])
   const [facturacion, setFacturacion]       = useState({ alumnos:[], total:0, porPlan:{} })
   const [diferencias, setDiferencias]       = useState([])
+  const [retencion, setRetencion]           = useState([])
+  const [ocupacion, setOcupacion]           = useState([])
+  const [evolucion, setEvolucion]           = useState([])
 
   useEffect(() => { fetchReporte() }, [mes, tab])
 
@@ -147,6 +150,69 @@ export default function Reportes() {
       setDiferencias(conDif)
     }
 
+    if (tab === 'retencion') {
+      const { data: als } = await supabase.from('alumnos')
+        .select('id,nombre,apellido,plan,instructor_id,instructores(nombre,apellido),horarios_alumno(instructor_id,instructores(nombre))')
+        .eq('activo', true).order('apellido')
+      const alumnosIds = (als||[]).map(a=>a.id)
+      const { data: asists } = await supabase.from('asistencias')
+        .select('alumno_id,clases(fecha)')
+        .in('alumno_id', alumnosIds.length>0?alumnosIds:['none'])
+        .eq('asistio', true)
+      const ultimaAsist = {}
+      ;(asists||[]).forEach(a => {
+        const f = a.clases?.fecha
+        if (f && (!ultimaAsist[a.alumno_id] || f > ultimaAsist[a.alumno_id])) ultimaAsist[a.alumno_id] = f
+      })
+      const hoy = new Date()
+      setRetencion((als||[]).map(a => {
+        const ultima = ultimaAsist[a.id] || null
+        const dias = ultima ? Math.floor((hoy - new Date(ultima+'T00:00:00')) / 86400000) : null
+        const estado = dias===null?'sin_registro':dias<=7?'activo':dias<=21?'regular':'riesgo'
+        return { ...a, ultimaAsist:ultima, diasSinVenir:dias, estado }
+      }))
+    }
+
+    if (tab === 'ocupacion') {
+      const hace3m = new Date(); hace3m.setMonth(hace3m.getMonth()-3)
+      const hoyStr = format(new Date(),'yyyy-MM-dd')
+      const { data: clsData } = await supabase.from('clases')
+        .select('nombre,hora,sala,capacidad,asistencias(id)')
+        .gte('fecha', format(hace3m,'yyyy-MM-dd')).lte('fecha', hoyStr)
+      const grupos = {}
+      ;(clsData||[]).forEach(c => {
+        const key = `${c.nombre}||${c.hora?.slice(0,5)}||${c.sala}`
+        if (!grupos[key]) grupos[key] = {nombre:c.nombre,hora:c.hora,sala:c.sala,total:0,alumnos:0,capTotal:0}
+        grupos[key].total++
+        grupos[key].alumnos += (c.asistencias||[]).length
+        grupos[key].capTotal += (c.sala==='Sala B'||!c.capacidad)?0:c.capacidad
+      })
+      setOcupacion(Object.values(grupos).map(g=>({
+        ...g,
+        promAlumnos: g.total>0?Math.round(g.alumnos/g.total*10)/10:0,
+        pct: g.sala!=='Sala B'&&g.capTotal>0?Math.round(g.alumnos/g.capTotal*100):null
+      })).sort((a,b)=>b.promAlumnos-a.promAlumnos))
+    }
+
+    if (tab === 'evolucion') {
+      const hace12m = new Date(); hace12m.setFullYear(hace12m.getFullYear()-1)
+      const { data: pgs } = await supabase.from('pagos')
+        .select('monto,periodo,confirmado')
+        .eq('pagado', true)
+        .gte('periodo', format(hace12m,'yyyy-MM'))
+      const porMes = {}
+      ;(pgs||[]).forEach(p => {
+        if (!p.periodo || p.confirmado===false) return
+        if (!porMes[p.periodo]) porMes[p.periodo] = {periodo:p.periodo,cobrado:0,pagos:0}
+        porMes[p.periodo].cobrado += Number(p.monto||0)
+        porMes[p.periodo].pagos++
+      })
+      setEvolucion(Object.values(porMes)
+        .sort((a,b)=>a.periodo.localeCompare(b.periodo))
+        .map(m=>({...m, label:format(parseISO(m.periodo+'-01'),'MMM yy',{locale:es})}))
+      )
+    }
+
     if (tab === 'alumnos') {
       const { data: als } = await supabase.from('alumnos')
         .select('*, instructor_id, instructores(nombre,apellido), horarios_alumno(instructor_id,instructores(nombre)), pagos(pagado,monto), asistencias(asistio,estado_asistencia)')
@@ -187,6 +253,9 @@ export default function Reportes() {
           <div className={`tab${tab==='asistencia'?' active':''}`} onClick={()=>setTab('asistencia')}>Asistencia</div>
           <div className={`tab${tab==='alumnos'?' active':''}`} onClick={()=>setTab('alumnos')}>Estado alumnos</div>
           <div className={`tab${tab==='diferencias'?' active':''}`} onClick={()=>setTab('diferencias')}>Diferencias</div>
+          <div className={`tab${tab==='retencion'?' active':''}`} onClick={()=>setTab('retencion')}>Retención</div>
+          <div className={`tab${tab==='ocupacion'?' active':''}`} onClick={()=>setTab('ocupacion')}>Ocupación</div>
+          <div className={`tab${tab==='evolucion'?' active':''}`} onClick={()=>setTab('evolucion')}>Evolución</div>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:10}}>
           <select className="form-inp" style={{width:170}} value={mes} onChange={e=>setMes(e.target.value)}>
@@ -497,6 +566,115 @@ export default function Reportes() {
             }
           </>)
         })()}
+
+        {tab==='retencion' && (()=>{
+          const enRiesgo = retencion.filter(a=>a.estado==='riesgo')
+          const regular  = retencion.filter(a=>a.estado==='regular')
+          const activos  = retencion.filter(a=>a.estado==='activo')
+          const sinReg   = retencion.filter(a=>a.estado==='sin_registro')
+          return (<>
+            <div className="stats" style={{gridTemplateColumns:'repeat(4,1fr)',marginBottom:16}}>
+              <div className="sc" style={{'--acc':'var(--teal)'}}><div className="sc-lbl">Activos</div><div className="sc-val">{activos.length}</div><div className="sc-sub">asistió esta semana</div></div>
+              <div className="sc" style={{'--acc':'var(--blue)'}}><div className="sc-lbl">Regulares</div><div className="sc-val">{regular.length}</div><div className="sc-sub">8–21 días sin venir</div></div>
+              <div className="sc" style={{'--acc':'#E24B4A'}}><div className="sc-lbl">En riesgo</div><div className="sc-val">{enRiesgo.length}</div><div className="sc-sub">+3 semanas sin venir</div></div>
+              <div className="sc" style={{'--acc':'var(--sl-m)'}}><div className="sc-lbl">Sin registro</div><div className="sc-val">{sinReg.length}</div><div className="sc-sub">nunca asistieron</div></div>
+            </div>
+            <div className="panel">
+              <div className="ph"><span className="ph-title">Retención de alumnos activos</span><span style={{fontSize:11,color:'var(--sl-m)'}}>{retencion.length} alumnos</span></div>
+              <div className="tbl-wrap">
+                <table className="tbl">
+                  <thead><tr>
+                    <th style={{position:'sticky',left:0,background:'var(--sl-l)',zIndex:2}}>Alumno</th>
+                    <th>Plan</th><th>Instructor</th><th>Última asistencia</th><th style={{textAlign:'center'}}>Días sin venir</th><th>Estado</th>
+                  </tr></thead>
+                  <tbody>
+                    {retencion.length===0&&<tr><td colSpan={6} className="empty">Sin datos</td></tr>}
+                    {[...retencion].sort((a,b)=>(b.diasSinVenir??-1)-(a.diasSinVenir??-1)).map(a=>{
+                      const [bg,col,label]=a.estado==='activo'?['#E4F4EE','#2D7A5A','Activo']:a.estado==='regular'?['#EEF3FB','#185FA5','Regular']:a.estado==='riesgo'?['#FDECEA','#B03030','En riesgo']:['var(--sl-l)','var(--sl-m)','Sin registro']
+                      return (
+                        <tr key={a.id} style={a.estado==='riesgo'?{background:'#FFF5F5'}:{}}>
+                          <td className="col-sticky"><span style={{fontWeight:500,cursor:'pointer',color:'var(--mg)'}} onClick={()=>window.dispatchEvent(new CustomEvent('open-ficha-alumno',{detail:a.id}))}>{a.nombre} {a.apellido}</span></td>
+                          <td style={{fontSize:11}}>{a.plan==='mensual'?'Mensual':a.plan==='pack'?'Prepago':a.plan==='sueltas'?'Sueltas':'—'}</td>
+                          <td style={{fontSize:11,color:'var(--sl-m)'}}>{mostrarInstructores(a)}</td>
+                          <td style={{fontSize:11,fontFamily:'var(--font-num)',color:'var(--sl-m)'}}>{a.ultimaAsist?format(new Date(a.ultimaAsist+'T00:00:00'),'dd/MM/yy'):'—'}</td>
+                          <td style={{fontFamily:'var(--font-num)',fontWeight:600,textAlign:'center',color:a.estado==='riesgo'?'#B03030':a.estado==='regular'?'#185FA5':'var(--sl-m)'}}>{a.diasSinVenir!=null?a.diasSinVenir:'—'}</td>
+                          <td><span style={{fontSize:11,padding:'3px 9px',borderRadius:6,background:bg,color:col,fontWeight:500}}>{label}</span></td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>)
+        })()}
+
+        {tab==='ocupacion' && (
+          <div className="panel">
+            <div className="ph"><span className="ph-title">Ocupación por clase — últimos 3 meses</span><span style={{fontSize:11,color:'var(--sl-m)'}}>{ocupacion.length} horarios</span></div>
+            <div className="tbl-wrap">
+              <table className="tbl">
+                <thead><tr>
+                  <th style={{position:'sticky',left:0,background:'var(--sl-l)',zIndex:2}}>Clase</th>
+                  <th>Sala</th><th style={{textAlign:'center'}}>Clases</th><th style={{textAlign:'center'}}>Prom. alumnos</th><th style={{minWidth:140}}>Ocupación</th>
+                </tr></thead>
+                <tbody>
+                  {ocupacion.length===0&&<tr><td colSpan={5} className="empty">Sin datos</td></tr>}
+                  {ocupacion.map((g,i)=>(
+                    <tr key={i}>
+                      <td className="col-sticky"><span style={{fontWeight:500}}>{g.nombre}</span><div style={{fontSize:10,color:'var(--sl-m)',fontFamily:'var(--font-num)'}}>{g.hora?.slice(0,5)}</div></td>
+                      <td style={{fontSize:11}}>{g.sala}</td>
+                      <td style={{textAlign:'center',fontFamily:'var(--font-num)',fontWeight:500}}>{g.total}</td>
+                      <td style={{textAlign:'center',fontFamily:'var(--font-num)',fontWeight:700}}>{g.promAlumnos}</td>
+                      <td>
+                        {g.pct!=null?(
+                          <div style={{display:'flex',alignItems:'center',gap:8}}>
+                            <div style={{flex:1,height:6,background:'var(--sl-l)',borderRadius:99,overflow:'hidden',minWidth:60}}>
+                              <div style={{height:'100%',width:`${Math.min(100,g.pct)}%`,background:g.pct>=80?'#E24B4A':g.pct>=50?'#48A999':'var(--mg)',borderRadius:99}}/>
+                            </div>
+                            <span style={{fontSize:11,fontFamily:'var(--font-num)',fontWeight:600,minWidth:34,textAlign:'right',color:g.pct>=80?'#B03030':g.pct>=50?'#2D7A5A':'var(--sl-m)'}}>{g.pct}%</span>
+                          </div>
+                        ):<span style={{fontSize:11,color:'var(--sl-m)'}}>Sala B</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {tab==='evolucion' && (<>
+          {evolucion.length>0&&(
+            <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:12,marginBottom:16}}>
+              <div className="sc" style={{'--acc':'var(--teal)'}}>
+                <div className="sc-lbl">Mejor mes</div>
+                <div style={{fontFamily:'var(--font-num)',fontSize:18,fontWeight:700,lineHeight:1.2,marginTop:4}}>${Math.round(evolucion.reduce((b,m)=>m.cobrado>b.cobrado?m:b,evolucion[0]).cobrado).toLocaleString('es-AR')}</div>
+                <div className="sc-sub">{evolucion.reduce((b,m)=>m.cobrado>b.cobrado?m:b,evolucion[0]).label}</div>
+              </div>
+              <div className="sc" style={{'--acc':'var(--mg)'}}>
+                <div className="sc-lbl">Promedio mensual</div>
+                <div style={{fontFamily:'var(--font-num)',fontSize:18,fontWeight:700,lineHeight:1.2,marginTop:4}}>${Math.round(evolucion.reduce((s,m)=>s+m.cobrado,0)/evolucion.length).toLocaleString('es-AR')}</div>
+                <div className="sc-sub">últimos {evolucion.length} meses</div>
+              </div>
+            </div>
+          )}
+          <div className="panel">
+            <div className="ph"><span className="ph-title">Ingresos reales por mes</span><span style={{fontSize:11,color:'var(--sl-m)'}}>últimos 12 meses</span></div>
+            <div style={{padding:'14px 8px 8px'}}>
+              {evolucion.length===0?<div className="empty">Sin datos de pagos</div>:(
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={evolucion} barSize={24}>
+                    <XAxis dataKey="label" tick={{fontSize:10,fill:'var(--sl-m)'}} axisLine={false} tickLine={false}/>
+                    <YAxis tick={{fontSize:10,fill:'var(--sl-m)'}} axisLine={false} tickLine={false} width={54} tickFormatter={v=>`$${(v/1000).toFixed(0)}k`}/>
+                    <Tooltip contentStyle={{fontSize:11,borderRadius:8}} formatter={v=>['$'+Math.round(v).toLocaleString('es-AR'),'Cobrado']}/>
+                    <Bar dataKey="cobrado" fill="var(--mg)" radius={[4,4,0,0]}/>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+        </>)}
 
       </>}
     </>
