@@ -5,7 +5,7 @@ import Toggle from '../components/Toggle'
 import Avatar from '../components/Avatar'
 import { format } from 'date-fns'
 
-const emptyForm = { alumno_id:'', concepto:'', monto:'', medio:'efectivo', pagado:true, fecha_pago:'', periodo:'' }
+const emptyForm = { alumno_id:'', monto:'', medio:'efectivo', pagado:true, fecha_pago:'', periodo:'' }
 
 export default function Pagos({ esAdmin }) {
   const [pagos, setPagos]     = useState([])
@@ -49,7 +49,7 @@ export default function Pagos({ esAdmin }) {
 
   function openModal(pago = null) {
     setForm(pago
-      ? { id:pago.id, alumno_id:pago.alumno_id, concepto:pago.concepto, monto:pago.monto||'', medio:pago.medio, pagado:pago.pagado, fecha_pago:pago.fecha_pago||'', periodo:pago.periodo||'' }
+      ? { id:pago.id, alumno_id:pago.alumno_id, monto:pago.monto||'', medio:pago.medio, pagado:pago.pagado, fecha_pago:pago.fecha_pago||'', periodo:pago.periodo||'' }
       : { ...emptyForm, fecha_pago:format(new Date(),'yyyy-MM-dd'), periodo:format(new Date(),'yyyy-MM') })
     if (pago) {
       const a = alumnos.find(x=>x.id===pago.alumno_id)
@@ -62,12 +62,11 @@ export default function Pagos({ esAdmin }) {
   }
 
   async function handleSave() {
-    if (!form.alumno_id || !form.concepto) return
+    if (!form.alumno_id) return
     setSaving(true)
     const necesitaConfirmacion = !esAdmin && (form.medio === 'mercadopago' || form.medio === 'transferencia') && form.pagado
     const payload = {
       alumno_id:  form.alumno_id,
-      concepto:   form.concepto,
       monto:      form.monto ? Number(form.monto) : null,
       medio:      form.medio,
       pagado:     form.pagado,
@@ -137,7 +136,7 @@ export default function Pagos({ esAdmin }) {
               <thead>
                 <tr>
                   <th style={{position:'sticky',left:0,background:'var(--sl-l)',zIndex:2}}>Alumno</th>
-                  <th>Concepto</th><th>Plan</th><th>Período</th><th>Monto</th><th>Medio</th><th>Fecha</th><th>Estado</th><th>Acciones</th>
+                  <th>Plan</th><th>Período</th><th>Monto</th><th>Medio</th><th>Fecha</th><th>Estado</th><th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -150,7 +149,6 @@ export default function Pagos({ esAdmin }) {
                         <span style={{color:'var(--mg)',fontWeight:500,whiteSpace:'nowrap'}}>{p.alumnos?`${p.alumnos.nombre} ${p.alumnos.apellido}`:'—'}</span>
                       </div>
                     </td>
-                    <td style={{whiteSpace:'nowrap'}}>{p.concepto}</td>
                     <td style={{whiteSpace:'nowrap'}}>
                       {(()=>{
                         const precio = precioSegunPlan(p.alumnos)
@@ -220,7 +218,6 @@ export default function Pagos({ esAdmin }) {
                 ))}
               </div>
             )}
-            <div className="form-row"><label className="form-lbl">Concepto</label><input className="form-inp" value={form.concepto} onChange={set('concepto')} placeholder="Ej: Plan mensual — Mayo"/></div>
             <div className="form-row2">
               <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Monto</label><input className="form-inp" type="number" value={form.monto} onChange={set('monto')} placeholder="0"/></div>
               <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Medio de pago</label><select className="form-inp" value={form.medio} onChange={set('medio')}><option value="efectivo">Efectivo</option><option value="mercadopago">Mercado Pago</option><option value="transferencia">Transferencia</option></select></div>
