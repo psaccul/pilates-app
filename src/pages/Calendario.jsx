@@ -98,10 +98,16 @@ export default function Calendario({ esAdmin }) {
   }
 
   async function refrescarClase(id) {
-    const { data } = await supabase.from('clases')
-      .select('*, instructores(id,nombre,apellido), asistencias(id,alumno_id,asistio,recuperacion,estado_asistencia,alumnos(id,nombre,apellido))')
-      .eq('id',id).single()
-    if (data) { setClases(prev=>prev.map(c=>c.id===id?data:c)); setModalClase(data) }
+    const ids = modalClase?._merged ? modalClase._merged.map(x=>x.id) : [id]
+    const results = await Promise.all(ids.map(cId =>
+      supabase.from('clases').select('*, instructores(id,nombre,apellido), asistencias(id,alumno_id,asistio,recuperacion,estado_asistencia,alumnos(id,nombre,apellido))').eq('id',cId).single().then(r=>r.data).catch(()=>null)
+    ))
+    const valid = results.filter(Boolean)
+    if (!valid.length) return
+    setClases(prev => { let n=prev; valid.forEach(d=>{n=n.map(c=>c.id===d.id?d:c)}); return n })
+    if (valid.length===1) { setModalClase(valid[0]); return }
+    const primary = valid.reduce((b,c)=>(c.asistencias||[]).length>(b.asistencias||[]).length?c:b, valid[0])
+    setModalClase({ ...primary, capacidad:valid.reduce((s,x)=>s+(x.capacidad||0),0), asistencias:valid.flatMap(x=>x.asistencias||[]), _merged:valid })
   }
 
   function colInst(instId) {
@@ -121,7 +127,10 @@ export default function Calendario({ esAdmin }) {
       const key = c.hora.slice(0,5)
       if (seen.has(key)) continue
       seen.add(key)
-      grupos.push(arr.filter(x => x.hora.slice(0,5)===key))
+      const grp = arr.filter(x => x.hora.slice(0,5)===key)
+      if (grp.length===1) { grupos.push(grp[0]); continue }
+      const primary = grp.reduce((b,x)=>(x.asistencias||[]).length>(b.asistencias||[]).length?x:b, grp[0])
+      grupos.push({ ...primary, capacidad:grp.reduce((s,x)=>s+(x.capacidad||0),0), asistencias:grp.flatMap(x=>x.asistencias||[]), _merged:grp })
     }
     return grupos
   }
@@ -270,32 +279,35 @@ export default function Calendario({ esAdmin }) {
   }
 
   function ChipClase({ c, compact=false }) {
-    const col=colInst(c.instructor_id), res=resumen(c)
+    const res=resumen(c)
     const tieneRec=(c.asistencias||[]).some(a=>a.recuperacion)
     const hayAusSA=res.sinAviso>0
     const lleno = c.sala !== 'Sala B' && c.capacidad > 0 && (c.asistencias||[]).length >= c.capacidad
+    const accentColor = hayAusSA?'#E24B4A':tieneRec?'#D4A020':lleno?'#B03030':'var(--mg)'
+    const instNombre = c.instructores?.nombre || (c._merged?.find(x=>x.instructores?.nombre)?.instructores?.nombre) || null
     return (
       <div draggable onDragStart={e=>onDragStart(e,c.id)} onDragEnd={()=>setDragging(null)}
         onClick={() => { setModalClase(c); setEditando(false) }}
-        style={{ background:col.bg, color:col.text,
-          border:`1px solid ${hayAusSA?'#F09595':tieneRec?'#D4A020':lleno?'#B03030':col.border}`,
+        style={{ background:'var(--white)', border:`1px solid var(--border)`,
+          borderLeft:`3px solid ${accentColor}`,
           borderRadius:5, padding:compact?'5px 8px':'3px 6px', marginBottom:3,
           cursor:'grab', userSelect:'none', opacity:dragging?.id===c.id?0.4:1 }}>
-        <div style={{fontSize:compact?11:9,fontWeight:500,opacity:0.75}}>
-          {c.hora.slice(0,5)}{compact&&<span style={{marginLeft:4}}>{c.instructores?.nombre?.split(' ')[0]||'—'}</span>}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:4}}>
+          <span style={{fontSize:compact?11:9,fontWeight:700,color:'var(--dark)',fontFamily:'var(--font-num)'}}>{c.hora.slice(0,5)}</span>
+          {instNombre&&<span style={{fontSize:compact?10:8,color:'var(--mg)',fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:'65%'}}>{instNombre}</span>}
         </div>
-        <div style={{fontSize:compact?12:10,fontWeight:500,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+        <div style={{fontSize:compact?12:10,fontWeight:500,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',color:'var(--dark)',marginTop:1}}>
           {c.nombre}
-          {tieneRec&&<span style={{fontSize:8,padding:'1px 3px',background:'rgba(0,0,0,0.1)',borderRadius:3,marginLeft:3}}>REC</span>}
-          {lleno&&<span style={{fontSize:8,padding:'1px 3px',background:'rgba(180,0,0,0.12)',borderRadius:3,marginLeft:3,color:'#B03030'}}>LLENO</span>}
+          {tieneRec&&<span style={{fontSize:8,padding:'1px 3px',background:'#FEF3E2',borderRadius:3,marginLeft:3,color:'#7A5010'}}>REC</span>}
+          {lleno&&<span style={{fontSize:8,padding:'1px 3px',background:'#FDECEA',borderRadius:3,marginLeft:3,color:'#B03030'}}>LLENO</span>}
         </div>
         {res.total>0&&(
-          <div style={{display:'flex',gap:2,marginTop:2,alignItems:'center'}}>
+          <div style={{display:'flex',gap:2,marginTop:3,alignItems:'center'}}>
             {res.presentes>0  &&<div style={{height:3,borderRadius:2,background:ESTADOS.presente.barColor,flex:res.presentes}}/>}
             {res.conAviso>0   &&<div style={{height:3,borderRadius:2,background:ESTADOS.ausente_con_aviso.barColor,flex:res.conAviso}}/>}
             {res.sinAviso>0   &&<div style={{height:3,borderRadius:2,background:ESTADOS.ausente_sin_aviso.barColor,flex:res.sinAviso}}/>}
             {res.pendientes>0 &&<div style={{height:3,borderRadius:2,background:ESTADOS.pendiente.barColor,flex:res.pendientes}}/>}
-            <span style={{fontSize:8,color:col.text,opacity:0.6,fontFamily:'var(--font-num)'}}>{res.presentes}/{res.total}</span>
+            <span style={{fontSize:8,color:'var(--sl-m)',fontFamily:'var(--font-num)'}}>{res.presentes}/{res.total}</span>
           </div>
         )}
       </div>
@@ -323,13 +335,7 @@ export default function Calendario({ esAdmin }) {
               {clasesD.length===0
                 ? <div style={{padding:'10px 12px',fontSize:11,color:'var(--sl-m)'}}>Sin clases</div>
                 : <div style={{padding:'8px 12px',display:'flex',flexDirection:'column',gap:4}}>
-                    {agruparClases(clasesD).map((grp,i)=>{
-                      if (grp.length===1) return <ChipClase key={grp[0].id} c={grp[0]} compact/>
-                      const col=colInst((grp.find(x=>x.instructor_id)||grp[0]).instructor_id)
-                      return <div key={`g${i}`} style={{border:`1px solid ${col.border}`,borderRadius:7,padding:'3px 4px',background:`${col.bg}88`,display:'flex',flexDirection:'column',gap:3,marginBottom:0}}>
-                        {grp.map(c=><ChipClase key={c.id} c={c} compact/>)}
-                      </div>
-                    })}
+                    {agruparClases(clasesD).map(c=><ChipClase key={c._merged?`m${c.id}`:c.id} c={c} compact/>)}
                   </div>
               }
             </div>
@@ -354,13 +360,7 @@ export default function Calendario({ esAdmin }) {
                 onDragOver={e=>onDragOver(e,fStr)} onDragLeave={()=>setDragOver(null)} onDrop={e=>onDrop(e,fStr)}
                 style={{background:isDT?'rgba(192,57,107,0.06)':esHoy?undefined:esMes?'var(--white)':'var(--sl-l)',padding:6,minHeight:esMes?100:80,opacity:esMes?1:0.4,outline:isDT?'2px dashed var(--mg)':'none',outlineOffset:-2,transition:'background 0.12s'}}>
                 <div className={`cal-num${esHoy?' cal-num-hoy':''}`}>{dia.getDate()}</div>
-                {agruparClases(cDia).map((grp,i)=>{
-                  if (grp.length===1) return <ChipClase key={grp[0].id} c={grp[0]}/>
-                  const col=colInst((grp.find(x=>x.instructor_id)||grp[0]).instructor_id)
-                  return <div key={`g${i}`} style={{border:`1px solid ${col.border}`,borderRadius:5,padding:'2px 3px',background:`${col.bg}88`,marginBottom:2}}>
-                    {grp.map(c=><ChipClase key={c.id} c={c}/>)}
-                  </div>
-                })}
+                {agruparClases(cDia).map(c=><ChipClase key={c._merged?`m${c.id}`:c.id} c={c}/>)}
                 {esMes && esAdmin && (
                   <button onClick={() => { setForm({...emptyForm,fecha:fStr}); setModalNueva(fStr) }}
                     style={{width:'100%',marginTop:2,background:'none',border:'0.5px dashed var(--border)',borderRadius:4,color:'var(--sl-m)',fontSize:10,padding:'1px 0',cursor:'pointer'}}>+</button>
