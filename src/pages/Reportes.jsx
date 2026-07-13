@@ -22,6 +22,7 @@ export default function Reportes() {
   const [cumplimiento, setCumplimiento]     = useState([])
   const [reporteInstructores, setReporteInstructores] = useState([])
   const [facturacion, setFacturacion]       = useState({ alumnos:[], total:0, porPlan:{} })
+  const [diferencias, setDiferencias]       = useState([])
 
   useEffect(() => { fetchReporte() }, [mes, tab])
 
@@ -125,6 +126,27 @@ export default function Reportes() {
       setResumen({ clases:(clases||[]).length, asistencias:totalAsist, promedioDia:diasArr.length?Math.round(totalAsist/diasArr.length):0, diaPico:picoObj?picoObj.dia:'—' })
     }
 
+    if (tab === 'diferencias') {
+      const [{ data: pgs }, { data: cfg }] = await Promise.all([
+        supabase.from('pagos')
+          .select('id,alumno_id,monto,periodo,fecha_pago,pagado,alumnos(nombre,apellido,plan,clases_semana)')
+          .eq('periodo', mes)
+          .not('monto','is',null)
+          .order('fecha_pago',{ascending:false}),
+        supabase.from('configuracion').select('precio_mensual_1,precio_mensual_2,precio_mensual_3,precio_mensual_4,precio_mensual_5,precio_prepago,precio_sueltas').eq('id',1).maybeSingle(),
+      ])
+      const conDif = (pgs||[]).map(p => {
+        const a = p.alumnos
+        let esperado = null
+        if (a?.plan==='mensual')  esperado = Number(cfg?.[`precio_mensual_${a.clases_semana||2}`]||0)||null
+        else if (a?.plan==='pack')    esperado = Number(cfg?.precio_prepago||0)||null
+        else if (a?.plan==='sueltas') esperado = Number(cfg?.precio_sueltas||0)||null
+        const dif = esperado!==null ? Number(p.monto)-esperado : null
+        return { ...p, esperado, dif }
+      }).filter(p => p.dif!==null && p.dif!==0)
+      setDiferencias(conDif)
+    }
+
     if (tab === 'alumnos') {
       const { data: als } = await supabase.from('alumnos')
         .select('*, instructor_id, instructores(nombre,apellido), horarios_alumno(instructor_id,instructores(nombre)), pagos(pagado,monto), asistencias(asistio,estado_asistencia)')
@@ -164,6 +186,7 @@ export default function Reportes() {
           <div className={`tab${tab==='instructores'?' active':''}`} onClick={()=>setTab('instructores')}>Por instructor</div>
           <div className={`tab${tab==='asistencia'?' active':''}`} onClick={()=>setTab('asistencia')}>Asistencia</div>
           <div className={`tab${tab==='alumnos'?' active':''}`} onClick={()=>setTab('alumnos')}>Estado alumnos</div>
+          <div className={`tab${tab==='diferencias'?' active':''}`} onClick={()=>setTab('diferencias')}>Diferencias</div>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:10}}>
           <select className="form-inp" style={{width:170}} value={mes} onChange={e=>setMes(e.target.value)}>
@@ -410,6 +433,74 @@ export default function Reportes() {
         )}
 
       </>}
-    </>
+
+        {tab==='diferencias' && (()=>{
+          const deMenos = diferencias.filter(p=>p.dif<0)
+          const deMas   = diferencias.filter(p=>p.dif>0)
+          const totalDif = diferencias.reduce((s,p)=>s+p.dif,0)
+          return (<>
+            <div className="stats" style={{gridTemplateColumns:'repeat(3,1fr)',marginBottom:16}}>
+              <div className="sc" style={{'--acc':'#E24B4A'}}>
+                <div className="sc-lbl">Pagaron de menos</div>
+                <div className="sc-val">{deMenos.length}</div>
+                {deMenos.length>0&&<div className="sc-sub" style={{color:'#B03030',fontWeight:600}}>-${Math.abs(Math.round(deMenos.reduce((s,p)=>s+p.dif,0))).toLocaleString('es-AR')}</div>}
+              </div>
+              <div className="sc" style={{'--acc':'var(--teal)'}}>
+                <div className="sc-lbl">Pagaron de más</div>
+                <div className="sc-val">{deMas.length}</div>
+                {deMas.length>0&&<div className="sc-sub" style={{color:'#2D7A5A',fontWeight:600}}>+${Math.round(deMas.reduce((s,p)=>s+p.dif,0)).toLocaleString('es-AR')}</div>}
+              </div>
+              <div className="sc" style={{'--acc':'var(--mg)'}}>
+                <div className="sc-lbl">Diferencia neta</div>
+                <div className="sc-val" style={{fontSize:18,color:totalDif<0?'#B03030':totalDif>0?'#2D7A5A':'inherit'}}>
+                  {totalDif>=0?'+':''}{Math.round(totalDif).toLocaleString('es-AR')}
+                </div>
+              </div>
+            </div>
+            {diferencias.length===0
+              ? <div className="panel"><div style={{padding:28,textAlign:'center',color:'var(--sl-m)',fontSize:14}}>Sin diferencias en {format(parseISO(mes+'-01'),'MMMM yyyy',{locale:es})} — todos pagaron el monto exacto.</div></div>
+              : <div className="panel">
+                  <div className="ph">
+                    <span className="ph-title">Diferencias — {format(parseISO(mes+'-01'),'MMMM yyyy',{locale:es})}</span>
+                    <span style={{fontSize:11,color:'var(--sl-m)'}}>{diferencias.length} registros</span>
+                  </div>
+                  <div className="tbl-wrap">
+                    <table className="tbl">
+                      <thead><tr>
+                        <th style={{position:'sticky',left:0,background:'var(--sl-l)',zIndex:2}}>Alumno</th>
+                        <th>Plan</th><th>Precio plan</th><th>Pagó</th><th>Diferencia</th><th>Fecha</th>
+                      </tr></thead>
+                      <tbody>
+                        {diferencias.map(p=>{
+                          const menos = p.dif<0
+                          return (
+                            <tr key={p.id} style={{background:menos?'#FFF5F5':'#F6FBF8'}}>
+                              <td className="col-sticky">
+                                <span style={{fontWeight:500,cursor:'pointer',color:'var(--mg)'}} onClick={()=>window.dispatchEvent(new CustomEvent('open-ficha-alumno',{detail:p.alumno_id}))}>
+                                  {p.alumnos?.nombre} {p.alumnos?.apellido}
+                                </span>
+                              </td>
+                              <td style={{fontSize:11,whiteSpace:'nowrap'}}>{p.alumnos?.plan==='mensual'?'Mensual':p.alumnos?.plan==='pack'?'Prepago':'Sueltas'}</td>
+                              <td style={{fontFamily:'var(--font-num)',fontWeight:500,whiteSpace:'nowrap'}}>${Number(p.esperado).toLocaleString('es-AR')}</td>
+                              <td style={{fontFamily:'var(--font-num)',fontWeight:600,whiteSpace:'nowrap'}}>${Number(p.monto).toLocaleString('es-AR')}</td>
+                              <td>
+                                <span style={{fontFamily:'var(--font-num)',fontWeight:700,fontSize:13,color:menos?'#B03030':'#2D7A5A',whiteSpace:'nowrap'}}>
+                                  {menos?'':'+'}${Math.abs(p.dif).toLocaleString('es-AR')}
+                                </span>
+                              </td>
+                              <td style={{fontSize:11,color:'var(--sl-m)',whiteSpace:'nowrap'}}>{p.fecha_pago?format(new Date(p.fecha_pago+'T00:00:00'),'dd/MM/yy'):'—'}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+            }
+          </>)
+        })()}
+
+    </>}
+  </>
   )
 }

@@ -163,7 +163,16 @@ export default function Pagos({ esAdmin }) {
                       })()}
                     </td>
                     <td style={{fontSize:11,color:'var(--sl-m)',whiteSpace:'nowrap'}}>{p.periodo||'—'}</td>
-                    <td style={{fontWeight:500,fontFamily:'var(--font-num)',whiteSpace:'nowrap'}}>{p.monto!=null?`$${Number(p.monto).toLocaleString('es-AR')}`:'—'}</td>
+                    {(()=>{
+                      const precio = precioSegunPlan(p.alumnos)
+                      const monto = p.monto!=null ? Number(p.monto) : null
+                      const dif = precio&&monto!==null ? monto-precio : null
+                      const color = dif===null||dif===0 ? 'inherit' : dif<0 ? '#B03030' : '#2D7A5A'
+                      return <td style={{fontWeight:600,fontFamily:'var(--font-num)',whiteSpace:'nowrap',color}}>
+                        {monto!=null?`$${monto.toLocaleString('es-AR')}`:'—'}
+                        {dif!==null&&dif!==0&&<span style={{fontSize:10,marginLeft:3}}>{dif<0?'▼':'▲'}</span>}
+                      </td>
+                    })()}
                     <td>{medioTag(p.medio)}</td>
                     <td style={{fontSize:11,color:'var(--sl-m)',whiteSpace:'nowrap'}}>{p.fecha_pago?format(new Date(p.fecha_pago+'T00:00:00'),'dd/MM/yy'):'—'}</td>
                     <td>
