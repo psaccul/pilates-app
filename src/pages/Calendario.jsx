@@ -118,10 +118,10 @@ export default function Calendario({ esAdmin }) {
   function agruparClases(arr) {
     const grupos = [], seen = new Set()
     for (const c of arr) {
-      const key = `${c.hora}|${c.instructor_id||''}`
+      const key = c.hora.slice(0,5)
       if (seen.has(key)) continue
       seen.add(key)
-      grupos.push(arr.filter(x => x.hora===c.hora && (x.instructor_id||'')===(c.instructor_id||'')))
+      grupos.push(arr.filter(x => x.hora.slice(0,5)===key))
     }
     return grupos
   }
@@ -325,7 +325,7 @@ export default function Calendario({ esAdmin }) {
                 : <div style={{padding:'8px 12px',display:'flex',flexDirection:'column',gap:4}}>
                     {agruparClases(clasesD).map((grp,i)=>{
                       if (grp.length===1) return <ChipClase key={grp[0].id} c={grp[0]} compact/>
-                      const col=colInst(grp[0].instructor_id)
+                      const col=colInst((grp.find(x=>x.instructor_id)||grp[0]).instructor_id)
                       return <div key={`g${i}`} style={{border:`1px solid ${col.border}`,borderRadius:7,padding:'3px 4px',background:`${col.bg}88`,display:'flex',flexDirection:'column',gap:3,marginBottom:0}}>
                         {grp.map(c=><ChipClase key={c.id} c={c} compact/>)}
                       </div>
@@ -356,7 +356,7 @@ export default function Calendario({ esAdmin }) {
                 <div className={`cal-num${esHoy?' cal-num-hoy':''}`}>{dia.getDate()}</div>
                 {agruparClases(cDia).map((grp,i)=>{
                   if (grp.length===1) return <ChipClase key={grp[0].id} c={grp[0]}/>
-                  const col=colInst(grp[0].instructor_id)
+                  const col=colInst((grp.find(x=>x.instructor_id)||grp[0]).instructor_id)
                   return <div key={`g${i}`} style={{border:`1px solid ${col.border}`,borderRadius:5,padding:'2px 3px',background:`${col.bg}88`,marginBottom:2}}>
                     {grp.map(c=><ChipClase key={c.id} c={c}/>)}
                   </div>
