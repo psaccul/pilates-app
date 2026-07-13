@@ -135,7 +135,7 @@ export default function Alumnos({ esAdmin }) {
           let q = supabase.from('clases').select('id').eq('fecha',fechaStr).eq('hora',h.hora)
           if (h.instructor_id) q = q.eq('instructor_id', h.instructor_id)
           else q = q.is('instructor_id', null)
-          const { data: existe } = await q.maybeSingle()
+          const { data: _ex } = await q.limit(1); const existe = _ex?.[0]||null
           let claseId
           if (!existe) {
             const { data: nueva } = await supabase.from('clases').insert({ nombre:h.nombre_clase, tipo:'grupal', instructor_id:h.instructor_id||null, fecha:fechaStr, hora:h.hora, sala:h.sala||'Sala A', capacidad:4 }).select().single()
@@ -168,7 +168,7 @@ export default function Alumnos({ esAdmin }) {
         let q = supabase.from('clases').select('id').eq('fecha', fechaStr).eq('hora', h.hora)
         if (h.instructor_id) q = q.eq('instructor_id', h.instructor_id)
         else q = q.is('instructor_id', null)
-        const { data: existe } = await q.maybeSingle()
+        const { data: _ex } = await q.limit(1); const existe = _ex?.[0]||null
         let claseId
         if (!existe) {
           const { data: nueva } = await supabase.from('clases').insert({ nombre: h.nombre_clase, tipo: 'grupal', instructor_id: h.instructor_id || null, fecha: fechaStr, hora: h.hora, sala: h.sala || 'Sala A', capacidad: 4 }).select().single()
@@ -259,7 +259,7 @@ export default function Alumnos({ esAdmin }) {
           let q = supabase.from('clases').select('id').eq('fecha',fechaStr).eq('hora',h.hora)
           if (h.instructor_id) q = q.eq('instructor_id', h.instructor_id)
           else q = q.is('instructor_id', null)
-          const { data: existe } = await q.maybeSingle()
+          const { data: _ex } = await q.limit(1); const existe = _ex?.[0]||null
           let claseId
           if (!existe) {
             const { data: nueva } = await supabase.from('clases').insert({ nombre:h.nombre_clase, tipo:'grupal', instructor_id:h.instructor_id||null, fecha:fechaStr, hora:h.hora, sala:h.sala||'Sala A', capacidad:4 }).select().single()

@@ -115,6 +115,17 @@ export default function Calendario({ esAdmin }) {
     return clases.filter(c=>c.fecha===format(dia,'yyyy-MM-dd')).sort((a,b)=>a.hora.localeCompare(b.hora))
   }
 
+  function agruparClases(arr) {
+    const grupos = [], seen = new Set()
+    for (const c of arr) {
+      const key = `${c.hora}|${c.instructor_id||''}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      grupos.push(arr.filter(x => x.hora===c.hora && (x.instructor_id||'')===(c.instructor_id||'')))
+    }
+    return grupos
+  }
+
   function resumen(clase) {
     const a = clase.asistencias||[]
     return {
@@ -311,7 +322,15 @@ export default function Calendario({ esAdmin }) {
               </div>
               {clasesD.length===0
                 ? <div style={{padding:'10px 12px',fontSize:11,color:'var(--sl-m)'}}>Sin clases</div>
-                : <div style={{padding:'8px 12px',display:'flex',flexDirection:'column',gap:4}}>{clasesD.map(c=><ChipClase key={c.id} c={c} compact/>)}</div>
+                : <div style={{padding:'8px 12px',display:'flex',flexDirection:'column',gap:4}}>
+                    {agruparClases(clasesD).map((grp,i)=>{
+                      if (grp.length===1) return <ChipClase key={grp[0].id} c={grp[0]} compact/>
+                      const col=colInst(grp[0].instructor_id)
+                      return <div key={`g${i}`} style={{border:`1px solid ${col.border}`,borderRadius:7,padding:'3px 4px',background:`${col.bg}88`,display:'flex',flexDirection:'column',gap:3,marginBottom:0}}>
+                        {grp.map(c=><ChipClase key={c.id} c={c} compact/>)}
+                      </div>
+                    })}
+                  </div>
               }
             </div>
           )
@@ -335,7 +354,13 @@ export default function Calendario({ esAdmin }) {
                 onDragOver={e=>onDragOver(e,fStr)} onDragLeave={()=>setDragOver(null)} onDrop={e=>onDrop(e,fStr)}
                 style={{background:isDT?'rgba(192,57,107,0.06)':esHoy?undefined:esMes?'var(--white)':'var(--sl-l)',padding:6,minHeight:esMes?100:80,opacity:esMes?1:0.4,outline:isDT?'2px dashed var(--mg)':'none',outlineOffset:-2,transition:'background 0.12s'}}>
                 <div className={`cal-num${esHoy?' cal-num-hoy':''}`}>{dia.getDate()}</div>
-                {cDia.map(c=><ChipClase key={c.id} c={c}/>)}
+                {agruparClases(cDia).map((grp,i)=>{
+                  if (grp.length===1) return <ChipClase key={grp[0].id} c={grp[0]}/>
+                  const col=colInst(grp[0].instructor_id)
+                  return <div key={`g${i}`} style={{border:`1px solid ${col.border}`,borderRadius:5,padding:'2px 3px',background:`${col.bg}88`,marginBottom:2}}>
+                    {grp.map(c=><ChipClase key={c.id} c={c}/>)}
+                  </div>
+                })}
                 {esMes && esAdmin && (
                   <button onClick={() => { setForm({...emptyForm,fecha:fStr}); setModalNueva(fStr) }}
                     style={{width:'100%',marginTop:2,background:'none',border:'0.5px dashed var(--border)',borderRadius:4,color:'var(--sl-m)',fontSize:10,padding:'1px 0',cursor:'pointer'}}>+</button>
