@@ -149,29 +149,27 @@ export default function Pagos({ esAdmin }) {
                         <span style={{color:'var(--mg)',fontWeight:500,whiteSpace:'nowrap'}}>{p.alumnos?`${p.alumnos.nombre} ${p.alumnos.apellido}`:'—'}</span>
                       </div>
                     </td>
-                    <td style={{whiteSpace:'nowrap'}}>
-                      {(()=>{
-                        const precio = precioSegunPlan(p.alumnos)
-                        const plan = p.alumnos?.plan
-                        const [bg,col,label] = plan==='mensual'?['#D8F3EA','#085041','Mensual']:plan==='pack'?['#D6E8F9','#042C53','Prepago']:plan==='sueltas'?['#F0EAF8','#6A3A8A','Sueltas']:['var(--sl-l)','var(--sl-m)','—']
-                        return (
+                    {(()=>{
+                      const al = alumnos.find(a=>a.id===p.alumno_id) || p.alumnos || null
+                      const precio = precioSegunPlan(al)
+                      const plan = al?.plan
+                      const monto = p.monto!=null ? Number(p.monto) : null
+                      const dif = precio!=null&&monto!==null ? monto-precio : null
+                      const [bg,col,label] = plan==='mensual'?['#D8F3EA','#085041','Mensual']:plan==='pack'?['#D6E8F9','#042C53','Prepago']:plan==='sueltas'?['#F0EAF8','#6A3A8A','Sueltas']:['var(--sl-l)','var(--sl-m)','—']
+                      const montColor = dif===null||dif===0 ? 'inherit' : dif<0 ? '#B03030' : '#2D7A5A'
+                      return <>
+                        <td style={{whiteSpace:'nowrap'}}>
                           <div style={{display:'flex',flexDirection:'column',gap:2}}>
                             <span style={{fontSize:11,padding:'2px 7px',borderRadius:5,background:bg,color:col,fontWeight:500,alignSelf:'flex-start'}}>{label}</span>
                             {precio ? <span style={{fontSize:11,fontFamily:'var(--font-num)',color:'var(--sl-m)'}}>${Number(precio).toLocaleString('es-AR')}</span> : null}
                           </div>
-                        )
-                      })()}
-                    </td>
-                    <td style={{fontSize:11,color:'var(--sl-m)',whiteSpace:'nowrap'}}>{p.periodo||'—'}</td>
-                    {(()=>{
-                      const precio = precioSegunPlan(p.alumnos)
-                      const monto = p.monto!=null ? Number(p.monto) : null
-                      const dif = precio&&monto!==null ? monto-precio : null
-                      const color = dif===null||dif===0 ? 'inherit' : dif<0 ? '#B03030' : '#2D7A5A'
-                      return <td style={{fontWeight:600,fontFamily:'var(--font-num)',whiteSpace:'nowrap',color}}>
-                        {monto!=null?`$${monto.toLocaleString('es-AR')}`:'—'}
-                        {dif!==null&&dif!==0&&<span style={{fontSize:10,marginLeft:3}}>{dif<0?'▼':'▲'}</span>}
-                      </td>
+                        </td>
+                        <td style={{fontSize:11,color:'var(--sl-m)',whiteSpace:'nowrap'}}>{p.periodo||'—'}</td>
+                        <td style={{fontWeight:600,fontFamily:'var(--font-num)',whiteSpace:'nowrap',color:montColor}}>
+                          {monto!=null?`$${monto.toLocaleString('es-AR')}`:'—'}
+                          {dif!==null&&dif!==0&&<span style={{fontSize:10,marginLeft:3}}>{dif<0?'▼':'▲'}</span>}
+                        </td>
+                      </>
                     })()}
                     <td>{medioTag(p.medio)}</td>
                     <td style={{fontSize:11,color:'var(--sl-m)',whiteSpace:'nowrap'}}>{p.fecha_pago?format(new Date(p.fecha_pago+'T00:00:00'),'dd/MM/yy'):'—'}</td>
