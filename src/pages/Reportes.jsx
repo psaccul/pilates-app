@@ -466,7 +466,7 @@ export default function Reportes() {
                     <table className="tbl">
                       <thead><tr>
                         <th style={{position:'sticky',left:0,background:'var(--sl-l)',zIndex:2}}>Alumno</th>
-                        <th>Plan</th><th>Precio plan</th><th>Pagó</th><th>Diferencia</th><th>Fecha</th>
+                        <th>Plan</th><th style={{textAlign:'right'}}>Precio plan</th><th style={{textAlign:'right'}}>Pagó</th><th style={{textAlign:'right'}}>Diferencia</th><th>Fecha</th>
                       </tr></thead>
                       <tbody>
                         {diferencias.map(p=>{
@@ -479,11 +479,11 @@ export default function Reportes() {
                                 </span>
                               </td>
                               <td style={{fontSize:11,whiteSpace:'nowrap'}}>{p.alumnos?.plan==='mensual'?'Mensual':p.alumnos?.plan==='pack'?'Prepago':'Sueltas'}</td>
-                              <td style={{fontFamily:'var(--font-num)',fontWeight:500,whiteSpace:'nowrap'}}>${Number(p.esperado).toLocaleString('es-AR')}</td>
-                              <td style={{fontFamily:'var(--font-num)',fontWeight:600,whiteSpace:'nowrap'}}>${Number(p.monto).toLocaleString('es-AR')}</td>
-                              <td>
+                              <td style={{fontFamily:'var(--font-num)',fontWeight:500,whiteSpace:'nowrap',textAlign:'right'}}>${Number(p.esperado).toLocaleString('es-AR')}</td>
+                              <td style={{fontFamily:'var(--font-num)',fontWeight:600,whiteSpace:'nowrap',textAlign:'right'}}>${Number(p.monto).toLocaleString('es-AR')}</td>
+                              <td style={{textAlign:'right'}}>
                                 <span style={{fontFamily:'var(--font-num)',fontWeight:700,fontSize:13,color:menos?'#B03030':'#2D7A5A',whiteSpace:'nowrap'}}>
-                                  {menos?'':'+'}${Math.abs(p.dif).toLocaleString('es-AR')}
+                                  {menos?'-':'+'}${Math.abs(p.dif).toLocaleString('es-AR')}
                                 </span>
                               </td>
                               <td style={{fontSize:11,color:'var(--sl-m)',whiteSpace:'nowrap'}}>{p.fecha_pago?format(new Date(p.fecha_pago+'T00:00:00'),'dd/MM/yy'):'—'}</td>
