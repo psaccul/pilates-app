@@ -4,6 +4,7 @@ import Avatar from '../components/Avatar'
 import Modal from '../components/Modal'
 import { format, getDate } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { generarClasesRolling } from '../lib/generarClases'
 
 const COLORES = ['var(--mg)','var(--blue)','var(--teal)','var(--purple)']
 
@@ -62,6 +63,7 @@ export default function Dashboard({ setPage, esGerente }) {
   async function fetchAll() {
     setLoading(true)
     await generarPagosMensuales()
+    await generarClasesRolling()
     const [
       { data: clasesHoy },
       { data: alumnosData },

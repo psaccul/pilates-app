@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import Modal from '../components/Modal'
 import Avatar from '../components/Avatar'
-import { format, addDays, addWeeks, startOfWeek } from 'date-fns'
+import { format, addDays } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { generarClasesParaHorarios } from '../lib/generarClases'
 
 const DIAS = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']
 const emptyForm = { nombre:'', apellido:'', telefono:'', plan:'mensual', instructor_id:'', notas:'', nivel:'A', clases_semana:2, fecha_nacimiento:'' }
@@ -42,12 +43,8 @@ export default function Alumnos({ esAdmin }) {
   const [formHorarios, setFormHorarios]       = useState([])
   const [formHorarioNew, setFormHorarioNew]   = useState(emptyHorario)
   const [horariosToDelete, setHorariosToDelete] = useState([])
-  const [replicarSemanas, setReplicarSemanas] = useState(4)
-  const [replicarDesde, setReplicarDesde]     = useState(format(new Date(),'yyyy-MM-dd'))
-  const [replicando, setReplicando]           = useState(false)
-  const [replicarOk, setReplicarOk]           = useState(false)
+  const [horarioGenerado, setHorarioGenerado] = useState(false)
   const [auditModal, setAuditModal]           = useState(false)
-  const [semanasNuevo, setSemanasNuevo]       = useState(4)
 
   useEffect(() => {
     fetchData()
@@ -79,7 +76,7 @@ export default function Alumnos({ esAdmin }) {
     } : emptyForm)
     setFormHorarioNew({ ...emptyHorario, instructor_id: alumno?.instructor_id||'' })
     setHorariosToDelete([])
-    setReplicarOk(false)
+    setHorarioGenerado(false)
     if (alumno) {
       const { data } = await supabase.from('horarios_alumno').select('*, instructores(nombre)').eq('alumno_id',alumno.id).eq('activo',true).order('dia_semana').order('hora')
       setFormHorarios(data||[])
@@ -122,28 +119,9 @@ export default function Alumnos({ esAdmin }) {
     for (const h of nuevos) {
       await supabase.from('horarios_alumno').insert({ alumno_id:alumnoId, dia_semana:Number(h.dia_semana), hora:h.hora, instructor_id:h.instructor_id||null, sala:h.sala, nombre_clase:h.nombre_clase, activo:true })
     }
-    // Generar clases automáticamente para los horarios nuevos (4 semanas desde hoy)
+    // Generar clases automáticamente para los horarios nuevos (rolling, hasta HORIZON_SEMANAS)
     if (nuevos.length > 0) {
-      const desde = new Date(); desde.setHours(0,0,0,0)
-      for (let semana=0; semana<4; semana++) {
-        for (const h of nuevos) {
-          const base = addWeeks(desde, semana)
-          const inicioSemana = startOfWeek(base, {weekStartsOn:1})
-          const fechaDia = addDays(inicioSemana, Number(h.dia_semana))
-          if (fechaDia < desde) continue
-          const fechaStr = format(fechaDia, 'yyyy-MM-dd')
-          let q = supabase.from('clases').select('id').eq('fecha',fechaStr).eq('hora',h.hora)
-          if (h.instructor_id) q = q.eq('instructor_id', h.instructor_id)
-          else q = q.is('instructor_id', null)
-          const { data: _ex } = await q.limit(1); const existe = _ex?.[0]||null
-          let claseId
-          if (!existe) {
-            const { data: nueva } = await supabase.from('clases').insert({ nombre:h.nombre_clase, tipo:'grupal', instructor_id:h.instructor_id||null, fecha:fechaStr, hora:h.hora, sala:h.sala||'Sala A', capacidad:4 }).select().single()
-            claseId = nueva?.id
-          } else { claseId = existe.id }
-          if (claseId) await supabase.from('asistencias').upsert({ clase_id:claseId, alumno_id:alumnoId, asistio:false, recuperacion:false, estado_asistencia:'pendiente' }, {onConflict:'clase_id,alumno_id'})
-        }
-      }
+      await generarClasesParaHorarios(nuevos, alumnoId)
       window.dispatchEvent(new CustomEvent('horarios-generados'))
     }
     setSaving(false); setModal(false); fetchData()
@@ -152,33 +130,6 @@ export default function Alumnos({ esAdmin }) {
   async function handleDelete(id) {
     if (!confirm('¿Eliminar este alumno?')) return
     await supabase.from('alumnos').update({ activo:false }).eq('id',id); fetchData()
-  }
-
-  async function generarClasesDesdeModal() {
-    if (!form.id || formHorarios.length === 0) return
-    setReplicando(true); setReplicarOk(false)
-    const desde = new Date(replicarDesde + 'T00:00:00')
-    for (let semana = 0; semana < replicarSemanas; semana++) {
-      for (const h of formHorarios) {
-        const base = addWeeks(desde, semana)
-        const inicioSemana = startOfWeek(base, { weekStartsOn: 1 })
-        const fechaDia = addDays(inicioSemana, Number(h.dia_semana))
-        if (fechaDia < desde) continue
-        const fechaStr = format(fechaDia, 'yyyy-MM-dd')
-        let q = supabase.from('clases').select('id').eq('fecha', fechaStr).eq('hora', h.hora)
-        if (h.instructor_id) q = q.eq('instructor_id', h.instructor_id)
-        else q = q.is('instructor_id', null)
-        const { data: _ex } = await q.limit(1); const existe = _ex?.[0]||null
-        let claseId
-        if (!existe) {
-          const { data: nueva } = await supabase.from('clases').insert({ nombre: h.nombre_clase, tipo: 'grupal', instructor_id: h.instructor_id || null, fecha: fechaStr, hora: h.hora, sala: h.sala || 'Sala A', capacidad: 4 }).select().single()
-          claseId = nueva?.id
-        } else { claseId = existe.id }
-        if (claseId) await supabase.from('asistencias').upsert({ clase_id: claseId, alumno_id: form.id, asistio: false, recuperacion: false, estado_asistencia: 'pendiente' }, { onConflict: 'clase_id,alumno_id' })
-      }
-    }
-    setReplicando(false); setReplicarOk(true)
-    window.dispatchEvent(new CustomEvent('horarios-generados'))
   }
 
   async function verHistorial(alumno) {
@@ -247,29 +198,10 @@ export default function Alumnos({ esAdmin }) {
         .select('*, instructores(nombre)').single()
       if (guardado) setFormHorarios(prev=>[...prev, guardado])
 
-      // Generar clases si se eligió > 0 semanas
-      if (semanasNuevo > 0) {
-        const desde = new Date(); desde.setHours(0,0,0,0)
-        for (let semana=0; semana<semanasNuevo; semana++) {
-          const base = addWeeks(desde, semana)
-          const inicioSemana = startOfWeek(base, {weekStartsOn:1})
-          const fechaDia = addDays(inicioSemana, h.dia_semana)
-          if (fechaDia < desde) continue
-          const fechaStr = format(fechaDia, 'yyyy-MM-dd')
-          let q = supabase.from('clases').select('id').eq('fecha',fechaStr).eq('hora',h.hora)
-          if (h.instructor_id) q = q.eq('instructor_id', h.instructor_id)
-          else q = q.is('instructor_id', null)
-          const { data: _ex } = await q.limit(1); const existe = _ex?.[0]||null
-          let claseId
-          if (!existe) {
-            const { data: nueva } = await supabase.from('clases').insert({ nombre:h.nombre_clase, tipo:'grupal', instructor_id:h.instructor_id||null, fecha:fechaStr, hora:h.hora, sala:h.sala||'Sala A', capacidad:4 }).select().single()
-            claseId = nueva?.id
-          } else { claseId = existe.id }
-          if (claseId) await supabase.from('asistencias').upsert({ clase_id:claseId, alumno_id:form.id, asistio:false, recuperacion:false, estado_asistencia:'pendiente' }, {onConflict:'clase_id,alumno_id'})
-        }
-        window.dispatchEvent(new CustomEvent('horarios-generados'))
-        setReplicarOk(true)
-      }
+      // Generar clases automáticamente (rolling, hasta HORIZON_SEMANAS)
+      await generarClasesParaHorarios([h], form.id)
+      window.dispatchEvent(new CustomEvent('horarios-generados'))
+      setHorarioGenerado(true)
     } else {
       // Alumno nuevo: solo agregar al estado, se guarda con "Guardar alumno"
       setFormHorarios(prev=>[...prev, { ...h, _isNew:true, _uid:Date.now() }])
@@ -451,33 +383,12 @@ export default function Alumnos({ esAdmin }) {
                 <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Instructor</label><select className="form-inp" value={formHorarioNew.instructor_id} onChange={setHN('instructor_id')}><option value="">Sin asignar</option>{instructores.map(i=><option key={i.id} value={i.id}>{i.nombre} {i.apellido}</option>)}</select></div>
                 <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Sala</label><select className="form-inp" value={formHorarioNew.sala} onChange={setHN('sala')}><option value="Sala A">Sala A</option><option value="Sala B">Sala B</option></select></div>
               </div>
-              <div style={{display:'flex',alignItems:'center',gap:8,marginTop:10,flexWrap:'wrap'}}>
-                <span style={{fontSize:11,color:'var(--sl-m)'}}>Generar clases:</span>
-                {[0,4,8,12].map(n=>(
-                  <button key={n} onClick={()=>setSemanasNuevo(n)}
-                    style={{fontSize:11,padding:'3px 10px',borderRadius:6,border:`1px solid ${semanasNuevo===n?'var(--mg)':'var(--border)'}`,background:semanasNuevo===n?'var(--mg)':'var(--white)',color:semanasNuevo===n?'#fff':'var(--dark)',cursor:'pointer',fontWeight:semanasNuevo===n?600:400}}>
-                    {n===0?'No generar':`${n} sem`}
-                  </button>
-                ))}
-              </div>
               <button className="btn-sec" style={{fontSize:12,marginTop:8}} onClick={agregarHorarioEnModal} disabled={saving}>
-                {saving ? 'Guardando…' : semanasNuevo > 0 ? `+ Agregar y generar ${semanasNuevo} semanas` : '+ Agregar horario'}
+                {saving ? 'Guardando…' : '+ Agregar horario'}
               </button>
+              {horarioGenerado&&<div style={{fontSize:11,color:'#2D7A5A',marginTop:8}}>Horario guardado — las clases se generan automáticamente hacia adelante.</div>}
             </div>
           </div>
-
-          {/* Generar clases en el calendario — solo para alumnos existentes con horarios */}
-          {form.id && formHorarios.length > 0 && (
-            <div style={{marginTop:14,padding:'12px',background:'#FEF3E2',borderRadius:10,border:'1px solid #F0C060'}}>
-              <div style={{fontSize:11,fontWeight:500,color:'#7A5010',textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:10}}>Generar clases en el calendario</div>
-              <div className="form-row2">
-                <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Desde</label><input className="form-inp" type="date" value={replicarDesde} onChange={e=>setReplicarDesde(e.target.value)}/></div>
-                <div className="form-row" style={{marginBottom:0}}><label className="form-lbl">Semanas</label><select className="form-inp" value={replicarSemanas} onChange={e=>setReplicarSemanas(Number(e.target.value))}>{[1,2,3,4,6,8,12].map(n=><option key={n} value={n}>{n} semanas</option>)}</select></div>
-              </div>
-              {replicarOk&&<div style={{fontSize:12,color:'#2D7A5A',background:'#E4F4EE',padding:'7px 10px',borderRadius:7,marginTop:8}}>Clases generadas correctamente</div>}
-              <button className="btn-pri" style={{fontSize:12,background:'#D4A020',marginTop:8}} onClick={generarClasesDesdeModal} disabled={replicando}>{replicando?'Generando…':`Generar ${replicarSemanas} semanas`}</button>
-            </div>
-          )}
         </Modal>
         )
       })()}
