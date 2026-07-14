@@ -63,7 +63,7 @@ export default function Dashboard({ setPage, esGerente }) {
   async function fetchAll() {
     setLoading(true)
     await generarPagosMensuales()
-    await generarClasesRolling()
+    generarClasesRolling().catch(err => console.error('generarClasesRolling', err))
     const [
       { data: clasesHoy },
       { data: alumnosData },
