@@ -35,7 +35,6 @@ export default function Calendario({ esAdmin }) {
   const [instructores, setInstructores] = useState([])
   const [alumnos, setAlumnos]       = useState([])
   const [loading, setLoading]       = useState(true)
-  const [mostrarLeyenda, setMostrarLeyenda] = useState(false)
 
   const [modalClase, setModalClase] = useState(null)
   const [modalNueva, setModalNueva] = useState(null)
@@ -395,41 +394,8 @@ export default function Calendario({ esAdmin }) {
               ))}
             </div>
           )}
-          {/* Botón leyenda */}
-          <button className="btn-sec" style={{fontSize:11}} onClick={() => setMostrarLeyenda(l=>!l)}>
-            {mostrarLeyenda?'Ocultar guía':'Ver guía de colores'}
-          </button>
         </div>
       </div>
-
-      {/* Leyenda de colores */}
-      {mostrarLeyenda && (
-        <div style={{marginBottom:12,padding:'12px 14px',background:'var(--sl-l)',borderRadius:10,border:'1px solid var(--border)'}}>
-          <div style={{fontSize:11,fontWeight:500,color:'var(--sl-m)',textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:10}}>Guía de colores y estados</div>
-          <div style={{display:'flex',gap:16,flexWrap:'wrap',marginBottom:10}}>
-            {Object.entries(ESTADOS).map(([key,val])=>(
-              <div key={key} style={{display:'flex',alignItems:'center',gap:7}}>
-                <div style={{width:24,height:24,borderRadius:6,background:val.bg,border:`1px solid ${val.border}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:val.text,fontWeight:700}}>{val.icon}</div>
-                <span style={{fontSize:11,color:'var(--dark)'}}>{val.label}</span>
-              </div>
-            ))}
-          </div>
-          <div style={{fontSize:11,color:'var(--sl-m)',marginBottom:6,fontWeight:500}}>Colores por instructor (asignados automáticamente en orden):</div>
-          <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
-            {instructores.map((inst,idx)=>{
-              const col=COL_INST[idx%COL_INST.length]
-              return (
-                <div key={inst.id} style={{display:'flex',alignItems:'center',gap:6,padding:'4px 10px',background:col.bg,borderRadius:6,border:`1px solid ${col.border}`}}>
-                  <span style={{fontSize:11,fontWeight:500,color:col.text}}>{inst.nombre} {inst.apellido}</span>
-                </div>
-              )
-            })}
-          </div>
-          <div style={{marginTop:8,fontSize:11,color:'var(--sl-m)'}}>
-            Las clases <strong style={{color:'#B03030'}}>LLENAS</strong> muestran borde rojo. Las clases con recuperaciones muestran etiqueta <strong>REC</strong>.
-          </div>
-        </div>
-      )}
 
       {loading ? <div className="loading">Cargando…</div>
         : (esMobile && vistaMovil==='semanal') ? <VistaSemanal/> : <VistaMensual/>
