@@ -123,13 +123,13 @@ export default function Calendario({ esAdmin }) {
   function agruparClases(arr) {
     const grupos = [], seen = new Set()
     for (const c of arr) {
-      const key = c.hora.slice(0,5)
+      const key = `${c.hora.slice(0,5)}|${c.sala}`
       if (seen.has(key)) continue
       seen.add(key)
-      const grp = arr.filter(x => x.hora.slice(0,5)===key)
+      const grp = arr.filter(x => `${x.hora.slice(0,5)}|${x.sala}`===key)
       if (grp.length===1) { grupos.push(grp[0]); continue }
       const primary = grp.reduce((b,x)=>(x.asistencias||[]).length>(b.asistencias||[]).length?x:b, grp[0])
-      grupos.push({ ...primary, capacidad:grp.reduce((s,x)=>s+(x.capacidad||0),0), asistencias:grp.flatMap(x=>x.asistencias||[]), _merged:grp })
+      grupos.push({ ...primary, capacidad:Math.max(...grp.map(x=>x.capacidad||0)), asistencias:grp.flatMap(x=>x.asistencias||[]), _merged:grp })
     }
     return grupos
   }
