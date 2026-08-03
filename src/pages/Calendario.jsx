@@ -281,7 +281,7 @@ export default function Calendario({ esAdmin }) {
     const res=resumen(c)
     const tieneRec=(c.asistencias||[]).some(a=>a.recuperacion)
     const hayAusSA=res.sinAviso>0
-    const lleno = c.sala !== 'Sala B' && c.capacidad > 0 && (c.asistencias||[]).length >= c.capacidad
+    const lleno = (c._merged || [c]).some(x => x.sala !== 'Sala B' && x.capacidad > 0 && (x.asistencias||[]).length >= x.capacidad)
     const accentColor = hayAusSA?'#E24B4A':tieneRec?'#D4A020':lleno?'#B03030':'var(--mg)'
     const instNombre = c.instructores?.nombre || (c._merged?.find(x=>x.instructores?.nombre)?.instructores?.nombre) || null
     return (
