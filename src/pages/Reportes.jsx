@@ -219,12 +219,16 @@ export default function Reportes() {
       const { data: als } = await supabase.from('alumnos')
         .select('id,nombre,apellido,horarios_alumno!inner(dia_semana,hora,nombre_clase,sala,instructor_id,instructores(nombre,apellido))')
         .eq('activo',true).eq('horarios_alumno.activo',true).order('apellido')
-      const filas = (als||[]).flatMap(a => (a.horarios_alumno||[]).map(h => ({
+      const filas = (als||[]).map(a => ({
         alumnoId: a.id, alumno: `${a.nombre} ${a.apellido}`,
-        dia: h.dia_semana, hora: h.hora, clase: h.nombre_clase, sala: h.sala,
-        instructor: h.instructores ? `${h.instructores.nombre} ${h.instructores.apellido||''}`.trim() : 'Sin asignar',
-      })))
-      filas.sort((x,y) => x.alumno.localeCompare(y.alumno) || x.dia-y.dia || x.hora.localeCompare(y.hora))
+        horarios: (a.horarios_alumno||[])
+          .map(h => ({
+            dia: h.dia_semana, hora: h.hora, clase: h.nombre_clase, sala: h.sala,
+            instructor: h.instructores ? `${h.instructores.nombre} ${h.instructores.apellido||''}`.trim() : 'Sin asignar',
+          }))
+          .sort((x,y) => x.dia-y.dia || x.hora.localeCompare(y.hora)),
+      }))
+      filas.sort((x,y) => x.alumno.localeCompare(y.alumno))
       setHorariosReport(filas)
     }
 
@@ -521,24 +525,28 @@ export default function Reportes() {
           <div className="panel">
             <div className="ph">
               <span className="ph-title">Alumnos y sus clases</span>
-              <span style={{fontSize:11,color:'var(--sl-m)'}}>{horariosReport.length} horarios</span>
+              <span style={{fontSize:11,color:'var(--sl-m)'}}>{horariosReport.length} alumnos</span>
             </div>
             <div className="tbl-wrap">
               <table className="tbl" style={{minWidth:560}}>
                 <thead><tr>
                   <th style={{position:'sticky',left:0,background:'var(--sl-l)',zIndex:2}}>Alumno</th>
-                  <th>Día</th><th>Hora</th><th>Clase</th><th>Sala</th><th>Instructor</th>
+                  <th>Horarios</th>
                 </tr></thead>
                 <tbody>
-                  {horariosReport.length===0&&<tr><td colSpan={6} className="empty">Sin horarios cargados</td></tr>}
-                  {horariosReport.map((h,i)=>(
-                    <tr key={i}>
-                      <td className="col-sticky"><span style={{fontWeight:500,cursor:'pointer',color:'var(--mg)'}} onClick={()=>window.dispatchEvent(new CustomEvent('open-ficha-alumno',{detail:h.alumnoId}))}>{h.alumno}</span></td>
-                      <td style={{whiteSpace:'nowrap'}}>{DIAS[h.dia]}</td>
-                      <td style={{fontFamily:'var(--font-num)'}}>{h.hora?.slice(0,5)}</td>
-                      <td>{h.clase}</td>
-                      <td style={{fontSize:11}}>{h.sala}</td>
-                      <td style={{fontSize:11,color:'var(--sl-m)'}}>{h.instructor}</td>
+                  {horariosReport.length===0&&<tr><td colSpan={2} className="empty">Sin horarios cargados</td></tr>}
+                  {horariosReport.map(a=>(
+                    <tr key={a.alumnoId}>
+                      <td className="col-sticky" style={{verticalAlign:'top'}}><span style={{fontWeight:500,cursor:'pointer',color:'var(--mg)',whiteSpace:'nowrap'}} onClick={()=>window.dispatchEvent(new CustomEvent('open-ficha-alumno',{detail:a.alumnoId}))}>{a.alumno}</span></td>
+                      <td>
+                        {a.horarios.map((h,i)=>(
+                          <div key={i} style={{padding:'3px 0',borderBottom:i<a.horarios.length-1?'1px solid var(--border)':'none'}}>
+                            <span style={{fontWeight:500}}>{DIAS[h.dia]} <span style={{fontFamily:'var(--font-num)'}}>{h.hora?.slice(0,5)}</span></span>
+                            <span style={{marginLeft:8}}>{h.clase}</span>
+                            <span style={{fontSize:11,color:'var(--sl-m)',marginLeft:8}}>{h.sala} · {h.instructor}</span>
+                          </div>
+                        ))}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
