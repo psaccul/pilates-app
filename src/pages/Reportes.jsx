@@ -8,6 +8,7 @@ import { format, startOfMonth, endOfMonth, eachWeekOfInterval, startOfWeek, endO
 import { es } from 'date-fns/locale'
 
 const COLORS = ['#C0396B','#48A999','#4A6FA5','#9B6BBB']
+const DIAS = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo']
 
 export default function Reportes() {
   const [tab, setTab]     = useState('facturacion')
@@ -26,6 +27,7 @@ export default function Reportes() {
   const [retencion, setRetencion]           = useState([])
   const [ocupacion, setOcupacion]           = useState([])
   const [evolucion, setEvolucion]           = useState([])
+  const [horariosReport, setHorariosReport] = useState([])
 
   useEffect(() => { fetchReporte() }, [mes, tab])
 
@@ -213,6 +215,19 @@ export default function Reportes() {
       )
     }
 
+    if (tab === 'horarios') {
+      const { data: als } = await supabase.from('alumnos')
+        .select('id,nombre,apellido,horarios_alumno!inner(dia_semana,hora,nombre_clase,sala,instructor_id,instructores(nombre,apellido))')
+        .eq('activo',true).eq('horarios_alumno.activo',true).order('apellido')
+      const filas = (als||[]).flatMap(a => (a.horarios_alumno||[]).map(h => ({
+        alumnoId: a.id, alumno: `${a.nombre} ${a.apellido}`,
+        dia: h.dia_semana, hora: h.hora, clase: h.nombre_clase, sala: h.sala,
+        instructor: h.instructores ? `${h.instructores.nombre} ${h.instructores.apellido||''}`.trim() : 'Sin asignar',
+      })))
+      filas.sort((x,y) => x.alumno.localeCompare(y.alumno) || x.dia-y.dia || x.hora.localeCompare(y.hora))
+      setHorariosReport(filas)
+    }
+
     if (tab === 'alumnos') {
       const { data: als } = await supabase.from('alumnos')
         .select('*, instructor_id, instructores(nombre,apellido), horarios_alumno(instructor_id,instructores(nombre)), pagos(pagado,monto), asistencias(asistio,estado_asistencia)')
@@ -252,6 +267,7 @@ export default function Reportes() {
           <div className={`tab${tab==='instructores'?' active':''}`} onClick={()=>setTab('instructores')}>Por instructor</div>
           <div className={`tab${tab==='asistencia'?' active':''}`} onClick={()=>setTab('asistencia')}>Asistencia</div>
           <div className={`tab${tab==='alumnos'?' active':''}`} onClick={()=>setTab('alumnos')}>Estado alumnos</div>
+          <div className={`tab${tab==='horarios'?' active':''}`} onClick={()=>setTab('horarios')}>Horarios</div>
           <div className={`tab${tab==='diferencias'?' active':''}`} onClick={()=>setTab('diferencias')}>Diferencias</div>
           <div className={`tab${tab==='retencion'?' active':''}`} onClick={()=>setTab('retencion')}>Retención</div>
           <div className={`tab${tab==='ocupacion'?' active':''}`} onClick={()=>setTab('ocupacion')}>Ocupación</div>
@@ -495,6 +511,36 @@ export default function Reportes() {
                       </tr>
                     )
                   })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {tab==='horarios' && (
+          <div className="panel">
+            <div className="ph">
+              <span className="ph-title">Alumnos y sus clases</span>
+              <span style={{fontSize:11,color:'var(--sl-m)'}}>{horariosReport.length} horarios</span>
+            </div>
+            <div className="tbl-wrap">
+              <table className="tbl" style={{minWidth:560}}>
+                <thead><tr>
+                  <th style={{position:'sticky',left:0,background:'var(--sl-l)',zIndex:2}}>Alumno</th>
+                  <th>Día</th><th>Hora</th><th>Clase</th><th>Sala</th><th>Instructor</th>
+                </tr></thead>
+                <tbody>
+                  {horariosReport.length===0&&<tr><td colSpan={6} className="empty">Sin horarios cargados</td></tr>}
+                  {horariosReport.map((h,i)=>(
+                    <tr key={i}>
+                      <td className="col-sticky"><span style={{fontWeight:500,cursor:'pointer',color:'var(--mg)'}} onClick={()=>window.dispatchEvent(new CustomEvent('open-ficha-alumno',{detail:h.alumnoId}))}>{h.alumno}</span></td>
+                      <td style={{whiteSpace:'nowrap'}}>{DIAS[h.dia]}</td>
+                      <td style={{fontFamily:'var(--font-num)'}}>{h.hora?.slice(0,5)}</td>
+                      <td>{h.clase}</td>
+                      <td style={{fontSize:11}}>{h.sala}</td>
+                      <td style={{fontSize:11,color:'var(--sl-m)'}}>{h.instructor}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
